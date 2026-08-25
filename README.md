@@ -48,20 +48,20 @@ image is designed to be extended at runtime without root: `uv tool install` and
 Pull the published image and drop into a shell with your project mounted:
 
 ```bash
-docker run --rm -it -v "$PWD:/workspace" <dockerhub-namespace>/climage
+docker run --rm -it -v "$PWD:/workspace" kr4t0n/climage
 ```
 
 Run a one-off command:
 
 ```bash
-docker run --rm -v "$PWD:/workspace" <dockerhub-namespace>/climage rg -n "TODO"
+docker run --rm -v "$PWD:/workspace" kr4t0n/climage rg -n "TODO"
 ```
 
 If your host uid is not 1000, mounted files will be owned by a different user
 inside the container. Run as yourself to keep write access:
 
 ```bash
-docker run --rm -it --user "$(id -u):$(id -g)" -v "$PWD:/workspace" <dockerhub-namespace>/climage
+docker run --rm -it --user "$(id -u):$(id -g)" -v "$PWD:/workspace" kr4t0n/climage
 ```
 
 ## Build, test, run
@@ -157,11 +157,13 @@ To cut a release: `git tag v1.4.2 && git push origin v1.4.2`.
 
 ### One-time setup
 
-1. Create the Docker Hub repository `<namespace>/climage`.
+1. Create the Docker Hub repository `kr4t0n/climage`.
 2. Add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` under **Settings → Secrets and
    variables → Actions**.
-3. Replace `OWNER` in the `org.opencontainers.image.source` label in the
-   `Dockerfile` with your GitHub namespace.
+
+The published image name is `<DOCKERHUB_USERNAME>/<IMAGE_NAME>`, taken from the
+secret at publish time — the `kr4t0n/climage` used throughout this README is the
+expected result, not a hardcoded value.
 
 ## Project structure
 

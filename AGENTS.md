@@ -156,8 +156,6 @@ run; treat a step change as a regression to explain.
 - No vulnerability scanning. A Trivy or Grype job on the built image is the
   obvious next CI step.
 - No published multi-arch smoke test — arm64 is built but never executed.
-- The `org.opencontainers.image.source` label still carries an `OWNER`
-  placeholder; it must be set once the GitHub remote exists.
 - Docker Hub's repository description is not synced from `README.md`.
 - A `-slim` variant without `build-essential`/media tooling would suit agents
   that only need search and VCS.
