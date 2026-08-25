@@ -130,6 +130,14 @@ System scripts keep working because their shebangs name `/usr/bin/python3`
 explicitly. This is done with plain symlinks rather than `uv python install
 --default`, which is still flagged experimental upstream.
 
+**Claude Code's `stable` npm tag trails `latest`.** `@anthropic-ai/claude-code`
+publishes `stable`, `latest`, and `next` dist-tags, where `latest` currently
+equals `next` and runs ahead of `stable`. "Latest stable" therefore means the
+`stable` tag, not `latest` — the two resolved to 2.1.231 and 2.1.245 at the time
+of pinning. `@openai/codex` has no `stable` tag; its non-`latest` tags are
+alpha/beta and platform-specific builds, so `latest` is the stable channel
+there. Check `npm view <pkg> dist-tags` before bumping either pin.
+
 **Host uid mismatch on bind mounts.** The image runs as uid 1000. On a host
 where the user is not 1000, files written into a mounted `/workspace` land with
 the wrong owner. The entrypoint warns rather than `chown`ing — silently

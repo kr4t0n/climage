@@ -44,6 +44,7 @@ REQUIRED=(
 # Present only in default builds (INSTALL_CLAUDE_CODE=true); never fatal.
 OPTIONAL=(
     "claude --version"
+    "codex --version"
 )
 
 failed=0

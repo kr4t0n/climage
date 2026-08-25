@@ -25,7 +25,7 @@ it to Docker Hub. There is no application code.
 | Build | `build-essential` (`gcc`, `make`), `pkg-config` |
 | Shell & process | `bash`, `tmux`, `vim.tiny`, `htop`, `procps`, `shellcheck`, `tini` |
 | Archives | `unzip`, `zip`, `xz`, `bzip2`, `tar`, `gzip` |
-| Agent CLI | `claude` (Claude Code) — optional, on by default |
+| Agent CLIs | `claude` (Claude Code), `codex` (OpenAI Codex) — both optional, on by default |
 
 `python` and `python3` resolve to the uv-managed CPython (3.12 by default), not
 Debian's system interpreter — the pinned version is what runs, whichever name an
@@ -95,11 +95,22 @@ Every version is a build argument, so a variant image is a one-line change:
 | `UV_VERSION` | `0.12.5` | `uv`/`uvx` release copied from Astral's image |
 | `RUFF_VERSION` | `0.16.4` | `ruff` release copied from Astral's image |
 | `INSTALL_CLAUDE_CODE` | `true` | Set `false` to omit the Claude Code CLI |
-| `CLAUDE_CODE_VERSION` | `latest` | npm version specifier for Claude Code |
+| `CLAUDE_CODE_VERSION` | `2.1.231` | Exact Claude Code version (npm `stable` channel) |
+| `INSTALL_CODEX` | `true` | Set `false` to omit the Codex CLI |
+| `CODEX_VERSION` | `0.149.1` | Exact Codex CLI version (npm `latest`) |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
 
 ```bash
 docker build --build-arg NODE_VERSION=22 --build-arg INSTALL_CLAUDE_CODE=false -t climage:node22 .
+```
+
+The agent CLIs are pinned to exact versions so a rebuild of a given commit
+reproduces the same image. Bumping one is a build-arg override or a one-line
+edit:
+
+```bash
+docker build --build-arg CODEX_VERSION=0.150.0 -t climage:codex-next .
+```
 ```
 
 ### Runtime environment variables

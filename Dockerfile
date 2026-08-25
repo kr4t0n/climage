@@ -23,8 +23,14 @@ FROM node:${NODE_VERSION}-${DEBIAN_SUITE}-slim
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG PYTHON_VERSION=3.12
+# Agent CLIs are pinned to exact versions rather than a dist-tag: both publish
+# several times a week, and a floating tag makes two builds of the same commit
+# produce different images. Note that Claude Code's `stable` tag intentionally
+# trails `latest`; the pin below tracks `stable`.
 ARG INSTALL_CLAUDE_CODE=true
-ARG CLAUDE_CODE_VERSION=latest
+ARG CLAUDE_CODE_VERSION=2.1.231
+ARG INSTALL_CODEX=true
+ARG CODEX_VERSION=0.149.1
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -124,9 +130,12 @@ RUN uv python install "${PYTHON_VERSION}" \
 
 # --- Agent CLIs -------------------------------------------------------------
 RUN if [ "${INSTALL_CLAUDE_CODE}" = "true" ]; then \
-        npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
-        && npm cache clean --force; \
-    fi
+        npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"; \
+    fi \
+    && if [ "${INSTALL_CODEX}" = "true" ]; then \
+        npm install -g "@openai/codex@${CODEX_VERSION}"; \
+    fi \
+    && npm cache clean --force
 
 # Let the unprivileged user install more tooling at runtime: npm globals land
 # in $HOME, uv tools in /opt/uv/bin. Both precede /usr/local/bin on PATH.
