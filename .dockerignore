@@ -1,0 +1,4 @@
+# Keep the build context tiny: only the Dockerfile and scripts/ are needed.
+*
+!scripts
+!scripts/**

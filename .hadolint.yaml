@@ -1,0 +1,5 @@
+# DL3008: apt packages are intentionally unpinned — Debian point releases are
+# security fixes, and pinning here would break rebuilds as suites move.
+ignored:
+  - DL3008
+failure-threshold: warning

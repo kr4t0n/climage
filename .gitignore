@@ -1,0 +1,17 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Build / tooling output
+*.log
+.cache/
+dist/
+
+# Editors & OS
+.vscode/
+.idea/
+.DS_Store
+
+# Agent scratch space
+.argus/
