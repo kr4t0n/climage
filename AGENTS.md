@@ -98,6 +98,17 @@ consumed by an interpolated `FROM`. Treat the `UV_VERSION` and `RUFF_VERSION`
 defaults as manually maintained — check Astral's releases when touching the
 Python toolchain. The `node` base tag is likewise interpolated.
 
+**ghcr's manifest API is slow.** `docker manifest inspect ghcr.io/astral-sh/...`
+routinely takes 10-15s, so probing candidate tags under a short timeout reports
+existing tags as missing and silently pins you to a stale version. Allow at
+least 60s per probe, or read the version from PyPI (`pypi.org/pypi/ruff/json`),
+which tracks the same releases and answers immediately.
+
+**uv is on Docker Hub, ruff is not.** `astral/uv` is an official image, but the
+only ruff images on Docker Hub are third-party rebuilds. Both stages therefore
+pull from ghcr, deliberately — do not "fix" the inconsistency by pointing ruff
+at an unofficial namespace.
+
 **`.dockerignore` excludes everything by default.** It is an allowlist (`*` then
 `!scripts`). A new file that must be `COPY`ed into the image needs an explicit
 un-ignore line, or the build fails with "file not found".
