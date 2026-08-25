@@ -43,13 +43,13 @@ Three inputs converge on one final stage:
 
 ## Key design decisions
 
-**Slim base, explicit package list.** `node:22-bookworm-slim` plus a curated apt
-list, rather than the full `node:22` image. The full image bundles tooling we
+**Slim base, explicit package list.** `node:24-bookworm-slim` plus a curated apt
+list, rather than the full `node:24` image. The full image bundles tooling we
 would have to audit anyway, and the explicit list doubles as documentation of
 what the image promises.
 
 **Versions as build args, not literals.** Every upstream version is an `ARG` with
-a default. Variant builds (`--build-arg NODE_VERSION=20`) require no Dockerfile
+a default. Variant builds (`--build-arg NODE_VERSION=22`) require no Dockerfile
 edit, and there is exactly one place to bump.
 
 **Binary copy over installer scripts.** `COPY --from` on a pinned image tag is

@@ -10,7 +10,7 @@
 # All versions are build args so they can be pinned per build and bumped by
 # Dependabot in one place. See README.md for the supported matrix.
 
-ARG NODE_VERSION=22
+ARG NODE_VERSION=24
 ARG DEBIAN_SUITE=bookworm
 ARG UV_VERSION=0.12.5
 ARG RUFF_VERSION=0.16.4
