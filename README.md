@@ -92,8 +92,8 @@ Every version is a build argument, so a variant image is a one-line change:
 | `NODE_VERSION` | `22` | Node.js major version (official image tag) |
 | `DEBIAN_SUITE` | `bookworm` | Debian suite of the base image |
 | `PYTHON_VERSION` | `3.12` | CPython version installed via `uv python install` |
-| `UV_VERSION` | `0.12.0` | `uv`/`uvx` release copied from Astral's image |
-| `RUFF_VERSION` | `0.13.0` | `ruff` release copied from Astral's image |
+| `UV_VERSION` | `0.12.5` | `uv`/`uvx` release copied from Astral's image |
+| `RUFF_VERSION` | `0.16.4` | `ruff` release copied from Astral's image |
 | `INSTALL_CLAUDE_CODE` | `true` | Set `false` to omit the Claude Code CLI |
 | `CLAUDE_CODE_VERSION` | `latest` | npm version specifier for Claude Code |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |

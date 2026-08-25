@@ -11,8 +11,8 @@ PLATFORMS          ?= linux/amd64,linux/arm64
 
 NODE_VERSION       ?= 22
 PYTHON_VERSION     ?= 3.12
-UV_VERSION         ?= 0.12.0
-RUFF_VERSION       ?= 0.13.0
+UV_VERSION         ?= 0.12.5
+RUFF_VERSION       ?= 0.16.4
 
 IMAGE      := $(IMAGE_NAME):$(IMAGE_TAG)
 REMOTE     := $(DOCKERHUB_USERNAME)/$(IMAGE_NAME):$(IMAGE_TAG)

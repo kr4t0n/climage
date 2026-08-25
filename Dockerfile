@@ -12,8 +12,8 @@
 
 ARG NODE_VERSION=22
 ARG DEBIAN_SUITE=bookworm
-ARG UV_VERSION=0.12.0
-ARG RUFF_VERSION=0.13.0
+ARG UV_VERSION=0.12.5
+ARG RUFF_VERSION=0.16.4
 
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv-bin
 FROM ghcr.io/astral-sh/ruff:${RUFF_VERSION} AS ruff-bin
