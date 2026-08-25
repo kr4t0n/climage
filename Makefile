@@ -1,6 +1,6 @@
 # climage — local build/test/publish helpers.
 # Configuration comes from .env (see .env.example); every value is overridable
-# on the command line, e.g. `make build IMAGE_TAG=test NODE_VERSION=20`.
+# on the command line, e.g. `make build IMAGE_TAG=test NODE_VERSION=22`.
 
 -include .env
 
@@ -9,7 +9,7 @@ IMAGE_NAME         ?= climage
 IMAGE_TAG          ?= dev
 PLATFORMS          ?= linux/amd64,linux/arm64
 
-NODE_VERSION       ?= 22
+NODE_VERSION       ?= 24
 PYTHON_VERSION     ?= 3.12
 UV_VERSION         ?= 0.12.5
 RUFF_VERSION       ?= 0.16.4

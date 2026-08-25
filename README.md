@@ -89,7 +89,7 @@ Every version is a build argument, so a variant image is a one-line change:
 
 | Argument | Default | Purpose |
 | --- | --- | --- |
-| `NODE_VERSION` | `22` | Node.js major version (official image tag) |
+| `NODE_VERSION` | `24` | Node.js major version (official image tag) |
 | `DEBIAN_SUITE` | `bookworm` | Debian suite of the base image |
 | `PYTHON_VERSION` | `3.12` | CPython version installed via `uv python install` |
 | `UV_VERSION` | `0.12.5` | `uv`/`uvx` release copied from Astral's image |
@@ -99,7 +99,7 @@ Every version is a build argument, so a variant image is a one-line change:
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
 
 ```bash
-docker build --build-arg NODE_VERSION=20 --build-arg INSTALL_CLAUDE_CODE=false -t climage:node20 .
+docker build --build-arg NODE_VERSION=22 --build-arg INSTALL_CLAUDE_CODE=false -t climage:node22 .
 ```
 
 ### Runtime environment variables
