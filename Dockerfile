@@ -107,6 +107,15 @@ ENV LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
     LC_ALL=en_US.UTF-8
 
+# --- Runtime user -----------------------------------------------------------
+# Rename the base image's `node` account rather than creating a second user:
+# keeping uid/gid 1000 is what makes bind-mounted host files land with sane
+# ownership. Everything downstream refers to ${USERNAME}, never `node`.
+ARG USERNAME=climage
+RUN groupmod -n "${USERNAME}" node \
+    && usermod -l "${USERNAME}" -d "/home/${USERNAME}" -m node \
+    && chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}"
+
 # --- Python toolchain: uv + ruff --------------------------------------------
 COPY --from=uv-bin /uv /uvx /usr/local/bin/
 COPY --from=ruff-bin /ruff /usr/local/bin/ruff
@@ -125,7 +134,7 @@ RUN uv python install "${PYTHON_VERSION}" \
     && ln -sfn "$(uv python find "${PYTHON_VERSION}")" /usr/local/bin/python3 \
     && ln -sfn "$(uv python find "${PYTHON_VERSION}")" /usr/local/bin/python \
     && mkdir -p "${UV_TOOL_DIR}" "${UV_TOOL_BIN_DIR}" \
-    && chown -R node:node /opt/uv \
+    && chown -R "${USERNAME}:${USERNAME}" /opt/uv \
     && chmod -R a+rX /opt/uv
 
 # --- Agent CLIs -------------------------------------------------------------
@@ -139,23 +148,23 @@ RUN if [ "${INSTALL_CLAUDE_CODE}" = "true" ]; then \
 
 # Let the unprivileged user install more tooling at runtime: npm globals land
 # in $HOME, uv tools in /opt/uv/bin. Both precede /usr/local/bin on PATH.
-ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
-ENV PATH=/home/node/.npm-global/bin:/opt/uv/bin:${PATH}
+ENV NPM_CONFIG_PREFIX=/home/${USERNAME}/.npm-global
+ENV PATH=/home/${USERNAME}/.npm-global/bin:/opt/uv/bin:${PATH}
 
 # Debian's /etc/profile overwrites PATH wholesale, so a login shell
 # (`bash -lc ...`, as agents often spawn) would lose the directories above.
-RUN printf '%s\n' 'export PATH="/home/node/.npm-global/bin:/opt/uv/bin:$PATH"' \
+RUN printf 'export PATH="%s/bin:/opt/uv/bin:$PATH"\n' "${NPM_CONFIG_PREFIX}" \
         > /etc/profile.d/10-climage-path.sh \
     && chmod 0644 /etc/profile.d/10-climage-path.sh \
-    && mkdir -p /home/node/.npm-global /home/node/.cache /workspace \
-    && chown -R node:node /home/node /workspace
+    && mkdir -p "${NPM_CONFIG_PREFIX}" "/home/${USERNAME}/.cache" /workspace \
+    && chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}" /workspace
 
 COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-USER node
+USER ${USERNAME}
 WORKDIR /workspace
 
-ENV UV_CACHE_DIR=/home/node/.cache/uv \
+ENV UV_CACHE_DIR=/home/${USERNAME}/.cache/uv \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     NODE_ENV=development
 

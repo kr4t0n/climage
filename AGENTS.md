@@ -23,7 +23,8 @@ apt layer (agent tooling)               ─┘        └─> USER node, WORKDIR
 Three inputs converge on one final stage:
 
 - **Base image** — the official Node.js slim image. It provides the JS runtime,
-  npm, and a pre-existing unprivileged `node` user at uid/gid 1000.
+  npm, and a pre-existing unprivileged `node` user at uid/gid 1000, which the
+  build renames to `climage`.
 - **Astral binary stages** — `uv` and `ruff` are copied out of Astral's
   distribution images rather than installed with a `curl | sh` script. The
   binaries are static, the version is pinned by tag, and the layers cache
@@ -59,7 +60,7 @@ reproducible and auditable; piping a remote script into a shell is neither.
 get mounted over in real deployments. `/opt/uv` is `chown`ed to `node` so the
 unprivileged user can still run `uv tool install` at runtime.
 
-**Runtime-writable global npm prefix.** `NPM_CONFIG_PREFIX=/home/node/.npm-global`
+**Runtime-writable global npm prefix.** `NPM_CONFIG_PREFIX=/home/climage/.npm-global`
 is on `PATH` ahead of `/usr/local/bin`, so an agent can `npm install -g` more
 tooling without root.
 
@@ -137,6 +138,15 @@ equals `next` and runs ahead of `stable`. "Latest stable" therefore means the
 of pinning. `@openai/codex` has no `stable` tag; its non-`latest` tags are
 alpha/beta and platform-specific builds, so `latest` is the stable channel
 there. Check `npm view <pkg> dist-tags` before bumping either pin.
+
+**The runtime user is renamed, not created.** `groupmod`/`usermod` rename the
+base image's `node` account to `climage` in place, so it keeps uid/gid 1000 —
+the value that makes bind-mounted host files land with usable ownership for a
+typical single-user Linux host. Adding a second account would have left uid 1000
+occupied by `node` and pushed `climage` to 1001. Everything after that step
+refers to `${USERNAME}`; a hardcoded `node` or `/home/node` is a bug. Note that
+anything deriving from this image with `--user node` or a `/home/node` path
+breaks — the smoke test asserts the identity so the contract is explicit.
 
 **Host uid mismatch on bind mounts.** The image runs as uid 1000. On a host
 where the user is not 1000, files written into a mounted `/workspace` land with

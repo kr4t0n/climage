@@ -31,10 +31,10 @@ it to Docker Hub. There is no application code.
 Debian's system interpreter — the pinned version is what runs, whichever name an
 agent types.
 
-Runs as the unprivileged `node` user (uid 1000) with `/workspace` as the working
-directory. `tini` is PID 1 so long-lived agent sessions reap their children. The
+Runs as the unprivileged `climage` user (uid/gid 1000) with `/workspace` as the
+working directory. `tini` is PID 1 so long-lived agent sessions reap their children. The
 image is designed to be extended at runtime without root: `uv tool install` and
-`npm install -g` both work as the `node` user, in interactive and login shells.
+`npm install -g` both work as the `climage` user, in interactive and login shells.
 
 ## Prerequisites
 
@@ -90,6 +90,7 @@ Every version is a build argument, so a variant image is a one-line change:
 | Argument | Default | Purpose |
 | --- | --- | --- |
 | `NODE_VERSION` | `24` | Node.js major version (official image tag) |
+| `USERNAME` | `climage` | Runtime account name; the base image's `node` user is renamed to it, keeping uid/gid 1000 |
 | `DEBIAN_SUITE` | `bookworm` | Debian suite of the base image |
 | `PYTHON_VERSION` | `3.12` | CPython version installed via `uv python install` |
 | `UV_VERSION` | `0.12.5` | `uv`/`uvx` release copied from Astral's image |
@@ -118,9 +119,9 @@ docker build --build-arg CODEX_VERSION=0.150.0 -t climage:codex-next .
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `CLIMAGE_INIT` | unset | Path to a script the entrypoint sources before the command — use it for per-container bootstrap |
-| `UV_CACHE_DIR` | `/home/node/.cache/uv` | Mount a volume here to persist Python downloads |
+| `UV_CACHE_DIR` | `/home/climage/.cache/uv` | Mount a volume here to persist Python downloads |
 | `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` | `/opt/uv/tools`, `/opt/uv/bin` | Where `uv tool install` puts tools and their entry points (writable by `node`, on `PATH`) |
-| `NPM_CONFIG_PREFIX` | `/home/node/.npm-global` | Lets the unprivileged user `npm install -g` at runtime |
+| `NPM_CONFIG_PREFIX` | `/home/climage/.npm-global` | Lets the unprivileged user `npm install -g` at runtime |
 | `LANG` | `en_US.UTF-8` | Locale is generated in the image |
 
 ### Publishing credentials

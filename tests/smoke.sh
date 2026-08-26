@@ -105,6 +105,17 @@ else
     failed=$((failed + 1))
 fi
 
+# The runtime identity is part of the image's contract: uid 1000 keeps
+# bind-mounted host files sanely owned, and $HOME must match the account.
+whoami_actual=$(id -un)
+if [[ "${whoami_actual}" == "climage" && "$(id -u)" == "1000" && "${HOME}" == "/home/climage" ]]; then
+    printf 'ok    %-14s %s (uid %s), HOME=%s\n' "identity" "${whoami_actual}" "$(id -u)" "${HOME}"
+else
+    printf 'FAIL  %-14s got %s (uid %s) HOME=%s, expected climage/1000//home/climage\n' \
+        "identity" "${whoami_actual}" "$(id -u)" "${HOME}"
+    failed=$((failed + 1))
+fi
+
 # The workspace must be writable by the unprivileged runtime user.
 if touch /workspace/.climage-smoke 2>/dev/null; then
     rm -f /workspace/.climage-smoke
