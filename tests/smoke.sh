@@ -45,6 +45,7 @@ REQUIRED=(
 OPTIONAL=(
     "claude --version"
     "codex --version"
+    "skills --version"
 )
 
 failed=0

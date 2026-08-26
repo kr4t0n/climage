@@ -31,6 +31,8 @@ ARG INSTALL_CLAUDE_CODE=true
 ARG CLAUDE_CODE_VERSION=2.1.231
 ARG INSTALL_CODEX=true
 ARG CODEX_VERSION=0.149.1
+ARG INSTALL_SKILLS=true
+ARG SKILLS_VERSION=1.5.23
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -143,6 +145,9 @@ RUN if [ "${INSTALL_CLAUDE_CODE}" = "true" ]; then \
     fi \
     && if [ "${INSTALL_CODEX}" = "true" ]; then \
         npm install -g "@openai/codex@${CODEX_VERSION}"; \
+    fi \
+    && if [ "${INSTALL_SKILLS}" = "true" ]; then \
+        npm install -g "skills@${SKILLS_VERSION}"; \
     fi \
     && npm cache clean --force
 

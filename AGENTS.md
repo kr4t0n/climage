@@ -148,6 +148,13 @@ refers to `${USERNAME}`; a hardcoded `node` or `/home/node` is a bug. Note that
 anything deriving from this image with `--user node` or a `/home/node` path
 breaks — the smoke test asserts the identity so the contract is explicit.
 
+**Agent state spans three top-level `$HOME` entries.** Claude Code uses
+`~/.claude/` plus a sibling `~/.claude.json`; Codex uses `~/.codex/`; the
+`skills` CLI adds `~/.agents/` (the canonical skill copies) and symlinks from
+there into each agent's directory. Anything persisting agent state needs the
+whole home, not one subdirectory — and because skills are symlinks into
+`~/.agents`, persisting `~/.claude` alone yields dangling links.
+
 **Host uid mismatch on bind mounts.** The image runs as uid 1000. On a host
 where the user is not 1000, files written into a mounted `/workspace` land with
 the wrong owner. The entrypoint warns rather than `chown`ing — silently

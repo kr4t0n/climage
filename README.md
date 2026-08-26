@@ -25,7 +25,7 @@ it to Docker Hub. There is no application code.
 | Build | `build-essential` (`gcc`, `make`), `pkg-config` |
 | Shell & process | `bash`, `tmux`, `vim.tiny`, `htop`, `procps`, `shellcheck`, `tini` |
 | Archives | `unzip`, `zip`, `xz`, `bzip2`, `tar`, `gzip` |
-| Agent CLIs | `claude` (Claude Code), `codex` (OpenAI Codex) — both optional, on by default |
+| Agent CLIs | `claude` (Claude Code), `codex` (OpenAI Codex), `skills` (open agent-skills manager) — all optional, on by default |
 
 `python` and `python3` resolve to the uv-managed CPython (3.12 by default), not
 Debian's system interpreter — the pinned version is what runs, whichever name an
@@ -81,6 +81,25 @@ The smoke test asserts that every tool in the table above resolves on `PATH`,
 that `uv` finds its managed interpreter without network access, and that
 `/workspace` is writable by the runtime user.
 
+## Agent skills
+
+The [`skills`](https://github.com/vercel-labs/skills) CLI installs skills from
+the open agent-skills ecosystem into whichever agents are present:
+
+```bash
+skills add vercel-labs/agent-skills --list                       # browse a source
+skills add vercel-labs/agent-skills --skill frontend-design \
+    --global --agent claude-code --agent codex --yes             # non-interactive
+skills list --global
+```
+
+Skills install to a canonical `~/.agents/skills/<name>/` and are symlinked into
+each agent's own directory (`~/.claude/skills/`, and Codex's universal location).
+Because that all lives under `$HOME`, a volume mounted at `/home/climage`
+persists installed skills along with agent credentials — see the note in
+[Configuration](#configuration). Skills execute with full agent permissions, so
+review a source before installing it.
+
 ## Configuration
 
 ### Build arguments
@@ -99,6 +118,8 @@ Every version is a build argument, so a variant image is a one-line change:
 | `CLAUDE_CODE_VERSION` | `2.1.231` | Exact Claude Code version (npm `stable` channel) |
 | `INSTALL_CODEX` | `true` | Set `false` to omit the Codex CLI |
 | `CODEX_VERSION` | `0.149.1` | Exact Codex CLI version (npm `latest`) |
+| `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
+| `SKILLS_VERSION` | `1.5.23` | Exact [skills](https://github.com/vercel-labs/skills) version |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
 
 ```bash
