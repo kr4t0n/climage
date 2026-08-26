@@ -91,7 +91,11 @@ by roughly a third:
 | default | 2.0 GB | 698 MB |
 | `INSTALL_MEDIA=false INSTALL_BUILD_TOOLS=false` | 1.4 GB | 463 MB |
 
+Both variants are published, so building one yourself is optional:
+
 ```bash
+docker pull kr4t0n/climage:slim      # published slim variant
+# or build it locally:
 docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false -t climage:slim .
 ```
 
@@ -190,13 +194,15 @@ reads the same values from repository secrets — never commit a token.
 tags:
 
 1. **lint** — `hadolint` on the Dockerfile, `shellcheck` on the scripts.
-2. **build-test** — builds and smoke-tests `linux/amd64` and `linux/arm64` in
-   parallel, each on a runner of its own architecture. Pull requests stop here.
-3. **publish** — on `main` and `v*` tags only: each architecture is rebuilt on
-   its native runner and pushed to Docker Hub *by digest*, with SBOM and
-   provenance attestations.
-4. **manifest** — assembles the per-architecture digests into a single
-   multi-arch tag with `docker buildx imagetools create`, then inspects it.
+2. **build-test** — builds and smoke-tests both variants (full and slim) on
+   both architectures, each on a runner of its own architecture. Pull requests
+   stop here.
+3. **publish** — on `main` and `v*` tags only: every variant/architecture pair
+   is rebuilt on its native runner and pushed to Docker Hub *by digest*, with
+   SBOM and provenance attestations.
+4. **manifest** — one job per variant, assembling that variant's
+   per-architecture digests into a multi-arch tag set with
+   `docker buildx imagetools create`.
 
 Every architecture is built on a runner that natively speaks it — `ubuntu-latest`
 for amd64, `ubuntu-24.04-arm` for arm64 — rather than emulating arm64 through
@@ -205,10 +211,19 @@ arm runners are the same speed as amd64 and free for public repositories.
 
 Tags produced by `docker/metadata-action`:
 
-| Trigger | Tags |
-| --- | --- |
-| Push to `main` | `latest`, `edge`, `sha-<short>` |
-| Tag `v1.4.2` | `1.4.2`, `1.4`, `1`, `sha-<short>` |
+| Trigger | Full build | Slim build |
+| --- | --- | --- |
+| Push to `main` | `latest`, `sha-<short>` | `slim`, `sha-<short>-slim` |
+| Tag `v1.4.2` | `1.4.2`, `1.4`, `1`, `latest`, `sha-<short>` | `1.4.2-slim`, `1.4-slim`, `1-slim`, `sha-<short>-slim` |
+
+`latest` always means the full build: on a release it moves to the tagged
+version, and on a `main` push it tracks the newest commit. `slim` is the same
+image without the media and build-tool groups. Only the `sha-*` tags are
+immutable — pin those, or a semver tag, for reproducibility.
+
+There is no `edge` tag. It existed to mean "newest `main` build" in the
+convention where `latest` tracks releases only, but this pipeline points
+`latest` at `main` too, so it was a second name for the same digest.
 
 To cut a release: `git tag v1.4.2 && git push origin v1.4.2`.
 

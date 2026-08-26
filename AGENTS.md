@@ -195,6 +195,18 @@ one GitHub Actions cache. Without `scope=${{ matrix.arch }}` on `cache-from` /
 `cache-to`, each architecture overwrites the other's layers every run and both
 lose their cache.
 
+**`latest` is the full build; `slim` is a separate tag, not a suffix.** The
+manifest job runs once per variant with its own tag rules. The slim variant sets
+`flavor: latest=false` — without it, `latest=auto` would point bare `latest` at
+the slim image on any release and clobber the full build. Deleting that line is
+a silent, hard-to-notice regression.
+
+**There is no `edge` tag, deliberately.** `edge` distinguishes "newest main
+build" from "newest release" only when `latest` tracks releases exclusively.
+This pipeline sets `latest` on `main` pushes as well, so `edge` was a duplicate
+name for the same digest. Reintroducing it means first deciding whether `latest`
+should stop following `main`.
+
 **Publish pushes by digest, not by tag.** Each architecture pushes an untagged
 image and uploads its digest as an artifact; the `manifest` job merges those
 digests into the real tags. This is what allows two independent runners to
