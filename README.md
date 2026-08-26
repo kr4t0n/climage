@@ -81,6 +81,32 @@ The smoke test asserts that every tool in the table above resolves on `PATH`,
 that `uv` finds its managed interpreter without network access, and that
 `/workspace` is writable by the runtime user.
 
+### Slim variants
+
+The two heaviest package groups are build args. Turning both off cuts the image
+by roughly a third:
+
+| Variant | Uncompressed | Compressed (registry) |
+| --- | --- | --- |
+| default | 2.0 GB | 698 MB |
+| `INSTALL_MEDIA=false INSTALL_BUILD_TOOLS=false` | 1.4 GB | 463 MB |
+
+```bash
+docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false -t climage:slim .
+```
+
+Media is the single biggest group: ffmpeg alone pulls 153 packages, including
+LLVM, mesa GL drivers and a speech synthesiser, none of which a headless agent
+uses — but ffmpeg itself does not work without them. Drop the group entirely or
+keep it; there is no lighter middle ground in Debian.
+
+Each image records what it was built with, so a pulled image is
+self-describing:
+
+```bash
+docker run --rm kr4t0n/climage cat /etc/climage-build.env
+```
+
 ## Agent skills
 
 The [`skills`](https://github.com/vercel-labs/skills) CLI installs skills from
@@ -119,6 +145,8 @@ Every version is a build argument, so a variant image is a one-line change:
 | `INSTALL_CODEX` | `true` | Set `false` to omit the Codex CLI |
 | `CODEX_VERSION` | `0.149.1` | Exact Codex CLI version (npm `latest`) |
 | `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
+| `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
+| `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |
 | `SKILLS_VERSION` | `1.5.23` | Exact [skills](https://github.com/vercel-labs/skills) version |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
 

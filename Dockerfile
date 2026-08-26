@@ -33,8 +33,22 @@ ARG INSTALL_CODEX=true
 ARG CODEX_VERSION=0.149.1
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.5.23
+# Heavyweight package groups, measured: media pulls 172 packages / ~409 MB
+# (ffmpeg alone drags in LLVM, mesa GL drivers and a speech synthesiser), build
+# tools another ~231 MB. Both default on; turn either off for a slim variant.
+ARG INSTALL_MEDIA=true
+ARG INSTALL_BUILD_TOOLS=true
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+# Documentation is dead weight in an agent image; copyright files stay for
+# licence compliance. Must precede every apt install to take effect.
+RUN printf '%s\n' \
+        'path-exclude /usr/share/doc/*' \
+        'path-include /usr/share/doc/*/copyright' \
+        'path-exclude /usr/share/man/*' \
+        'path-exclude /usr/share/info/*' \
+        > /etc/dpkg/dpkg.cfg.d/01-climage-nodoc
 
 # --- Bootstrap: keyring tooling needed to add the GitHub CLI apt repo --------
 RUN apt-get update \
@@ -77,20 +91,13 @@ RUN apt-get update \
         diffutils \
         patch \
         moreutils \
-        ffmpeg \
-        imagemagick \
-        poppler-utils \
         sqlite3 \
         unzip \
         zip \
         xz-utils \
         bzip2 \
-        build-essential \
-        pkg-config \
         shellcheck \
         python3 \
-        python3-venv \
-        python3-dev \
         tmux \
         vim-tiny \
         procps \
@@ -98,12 +105,26 @@ RUN apt-get update \
         tini \
         locales \
         tzdata \
+    && if [ "${INSTALL_MEDIA}" = "true" ]; then \
+        apt-get install -y --no-install-recommends \
+            ffmpeg \
+            imagemagick \
+            poppler-utils; \
+    fi \
+    && if [ "${INSTALL_BUILD_TOOLS}" = "true" ]; then \
+        apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config; \
+    fi \
     && rm -rf /var/lib/apt/lists/* \
     # Debian ships these under alternate names to avoid binary clashes.
     && ln -s "$(command -v fdfind)" /usr/local/bin/fd \
     && ln -s "$(command -v batcat)" /usr/local/bin/bat \
     && sed -i 's/^# *\(en_US.UTF-8\)/\1/' /etc/locale.gen \
-    && locale-gen
+    && locale-gen \
+    # locale-gen compiles into /usr/lib/locale; the source definitions and
+    # charmaps (~17 MB) are not needed at runtime.
+    && rm -rf /usr/share/i18n
 
 ENV LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
@@ -163,6 +184,13 @@ RUN printf 'export PATH="%s/bin:/opt/uv/bin:$PATH"\n' "${NPM_CONFIG_PREFIX}" \
     && chmod 0644 /etc/profile.d/10-climage-path.sh \
     && mkdir -p "${NPM_CONFIG_PREFIX}" "/home/${USERNAME}/.cache" /workspace \
     && chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}" /workspace
+
+# Record which optional groups this image was built with, so the smoke test can
+# require exactly what is meant to be present and users can introspect a pull.
+RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\n' \
+        "${INSTALL_MEDIA}" "${INSTALL_BUILD_TOOLS}" "${INSTALL_CLAUDE_CODE}" \
+        "${INSTALL_CODEX}" "${INSTALL_SKILLS}" \
+        > /etc/climage-build.env
 
 COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 

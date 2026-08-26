@@ -26,27 +26,34 @@ REQUIRED=(
     "wget --version"
     "rsync --version"
     "ssh -V"
-    "ffmpeg -version"
-    "ffprobe -version"
-    "convert --version"
-    "pdftotext -v"
     "sqlite3 --version"
     "unzip -v"
     "zip --version"
     "xz --version"
     "shellcheck --version"
-    "make --version"
-    "gcc --version"
     "tmux -V"
     "htop --version"
 )
 
-# Present only in default builds (INSTALL_CLAUDE_CODE=true); never fatal.
-OPTIONAL=(
-    "claude --version"
-    "codex --version"
-    "skills --version"
-)
+OPTIONAL=()
+
+# The image records which optional groups it was built with. Require exactly
+# those, so a slim build passes and a default build that lost a tool fails.
+if [[ -r /etc/climage-build.env ]]; then
+    # shellcheck source=/dev/null
+    source /etc/climage-build.env
+fi
+
+add_group() { # add_group <enabled> <cmd+flag>...
+    local enabled=$1; shift
+    if [[ "${enabled}" == "true" ]]; then REQUIRED+=("$@"); else OPTIONAL+=("$@"); fi
+}
+add_group "${INSTALL_MEDIA:-true}" "ffmpeg -version" "ffprobe -version" \
+    "convert --version" "pdftotext -v"
+add_group "${INSTALL_BUILD_TOOLS:-true}" "make --version" "gcc --version"
+add_group "${INSTALL_CLAUDE_CODE:-true}" "claude --version"
+add_group "${INSTALL_CODEX:-true}" "codex --version"
+add_group "${INSTALL_SKILLS:-true}" "skills --version"
 
 failed=0
 for entry in "${REQUIRED[@]}"; do

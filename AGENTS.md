@@ -67,6 +67,14 @@ tooling without root.
 **`tini` as PID 1.** Agent sessions spawn long chains of subprocesses. Without an
 init, orphaned children accumulate as zombies and signals do not propagate.
 
+**Optional groups are recorded, not guessed.** `INSTALL_MEDIA` and
+`INSTALL_BUILD_TOOLS` (like the agent-CLI flags) are written to
+`/etc/climage-build.env` at build time. `tests/smoke.sh` sources that file and
+promotes each group to *required* when it was enabled — so a slim build passes
+while a default build that silently lost ffmpeg still fails. Marking those tools
+merely "optional" in the test would have hidden exactly the regression the test
+exists to catch.
+
 **Smoke test as the contract.** The image's promise is "these commands exist and
 work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
 
@@ -155,6 +163,22 @@ there into each agent's directory. Anything persisting agent state needs the
 whole home, not one subdirectory — and because skills are symlinks into
 `~/.agents`, persisting `~/.claude` alone yields dangling links.
 
+**Size levers, measured.** The image is ~2.0 GB unpacked (`docker image
+inspect` reports the *compressed* size, roughly a third of that — do not confuse
+the two). The breakdown: agent CLIs ~612 MB of native binaries, ffmpeg's
+dependency tree 364 MB, the build-essential chain 231 MB, the base image
+~230 MB, uv's CPython 123 MB. Only the group flags move the needle; trimming
+individual utilities does not. `python3-dev`/`python3-venv` were dropped as
+redundant — `python3` resolves to uv's interpreter, so C extensions build
+against uv's headers, not Debian's 3.11 ones.
+
+**dpkg exclusions only affect later installs.** `/etc/dpkg/dpkg.cfg.d/01-climage-nodoc`
+drops docs and manpages, so it must be written before the first `apt-get
+install`; files already in the base image are unaffected. Copyright files are
+explicitly re-included for licence compliance. Likewise `/usr/share/i18n` is
+removed only *after* `locale-gen`, which compiles what it needs into
+`/usr/lib/locale`.
+
 **Host uid mismatch on bind mounts.** The image runs as uid 1000. On a host
 where the user is not 1000, files written into a mounted `/workspace` land with
 the wrong owner. The entrypoint warns rather than `chown`ing — silently
@@ -186,5 +210,3 @@ run; treat a step change as a regression to explain.
 - No vulnerability scanning. A Trivy or Grype job on the built image is the
   obvious next CI step.
 - Docker Hub's repository description is not synced from `README.md`.
-- A `-slim` variant without `build-essential`/media tooling would suit agents
-  that only need search and VCS.
