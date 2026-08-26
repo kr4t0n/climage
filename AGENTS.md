@@ -39,7 +39,7 @@ Three inputs converge on one final stage:
 | `scripts/entrypoint.sh` | Baked into the image. Warns on an unwritable workspace, sources an optional `CLIMAGE_INIT` hook, then `exec "$@"`. |
 | `tests/smoke.sh` | **Not** baked in — bind-mounted at test time so the image stays free of test assets. Asserts the tool inventory. |
 | `Makefile` | The local equivalent of the CI jobs. Keep the two in sync. |
-| `.github/workflows/ci.yml` | lint → build & test → publish. |
+| `.github/workflows/ci.yml` | lint → build & test → publish by digest → manifest. |
 
 ## Key design decisions
 
@@ -143,9 +143,22 @@ where the user is not 1000, files written into a mounted `/workspace` land with
 the wrong owner. The entrypoint warns rather than `chown`ing — silently
 rewriting ownership of someone's source tree is worse than the warning.
 
-**PR builds are amd64-only.** Multi-arch happens only in the publish job, where
-arm64 is emulated through QEMU and is several times slower. An arm64-specific
-break therefore surfaces at publish time, not on the PR.
+**Never build arm64 under QEMU.** Emulating this image's apt layer costs tens of
+minutes and burns runner time for no benefit. Both CI matrices pin each
+architecture to a native runner (`ubuntu-latest` for amd64, `ubuntu-24.04-arm`
+for arm64), and there is no `setup-qemu-action` in the workflow. If a third
+architecture is ever added, give it a native runner or leave it out.
+
+**Per-architecture cache scopes are mandatory.** The two native runners share
+one GitHub Actions cache. Without `scope=${{ matrix.arch }}` on `cache-from` /
+`cache-to`, each architecture overwrites the other's layers every run and both
+lose their cache.
+
+**Publish pushes by digest, not by tag.** Each architecture pushes an untagged
+image and uploads its digest as an artifact; the `manifest` job merges those
+digests into the real tags. This is what allows two independent runners to
+contribute to one multi-arch tag — do not "simplify" it into a single tagged
+push, which would leave the last runner's tag overwriting the other's.
 
 **Image size is a real constraint.** `build-essential`, `ffmpeg`, and
 `imagemagick` dominate the footprint. The CI build reports the size on every
@@ -155,7 +168,6 @@ run; treat a step change as a regression to explain.
 
 - No vulnerability scanning. A Trivy or Grype job on the built image is the
   obvious next CI step.
-- No published multi-arch smoke test — arm64 is built but never executed.
 - Docker Hub's repository description is not synced from `README.md`.
 - A `-slim` variant without `build-essential`/media tooling would suit agents
   that only need search and VCS.

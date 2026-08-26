@@ -140,11 +140,18 @@ reads the same values from repository secrets — never commit a token.
 tags:
 
 1. **lint** — `hadolint` on the Dockerfile, `shellcheck` on the scripts.
-2. **build-test** — single-architecture build loaded into the runner's daemon,
-   then the smoke test. Pull requests stop here.
-3. **publish** — on `main` and `v*` tags only: multi-architecture build
-   (`linux/amd64`, `linux/arm64`) pushed to Docker Hub with SBOM and provenance
-   attestations.
+2. **build-test** — builds and smoke-tests `linux/amd64` and `linux/arm64` in
+   parallel, each on a runner of its own architecture. Pull requests stop here.
+3. **publish** — on `main` and `v*` tags only: each architecture is rebuilt on
+   its native runner and pushed to Docker Hub *by digest*, with SBOM and
+   provenance attestations.
+4. **manifest** — assembles the per-architecture digests into a single
+   multi-arch tag with `docker buildx imagetools create`, then inspects it.
+
+Every architecture is built on a runner that natively speaks it — `ubuntu-latest`
+for amd64, `ubuntu-24.04-arm` for arm64 — rather than emulating arm64 through
+QEMU. Emulating an apt layer this size costs tens of minutes per build; native
+arm runners are the same speed as amd64 and free for public repositories.
 
 Tags produced by `docker/metadata-action`:
 
