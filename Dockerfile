@@ -134,6 +134,9 @@ ENV LANG=en_US.UTF-8 \
 # Rename the base image's `node` account rather than creating a second user:
 # keeping uid/gid 1000 is what makes bind-mounted host files land with sane
 # ownership. Everything downstream refers to ${USERNAME}, never `node`.
+# DL3064 pattern-matches the name `USERNAME` as a possible credential; this is a
+# Unix account name with a literal value, so the rule is silenced here only.
+# hadolint ignore=DL3064
 ARG USERNAME=climage
 RUN groupmod -n "${USERNAME}" node \
     && usermod -l "${USERNAME}" -d "/home/${USERNAME}" -m node \
