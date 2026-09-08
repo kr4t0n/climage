@@ -196,6 +196,7 @@ RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_CLAUDE_CODE=%s\nIN
         > /etc/climage-build.env
 
 COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chmod=0755 scripts/climage-idle.sh /usr/local/bin/climage-idle
 
 USER ${USERNAME}
 WORKDIR /workspace
@@ -206,7 +207,11 @@ ENV UV_CACHE_DIR=/home/${USERNAME}/.cache/uv \
 
 # tini reaps the zombies long-lived agent sessions leave behind.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
-CMD ["bash"]
+# Not a plain `bash`: with a terminal climage-idle execs one anyway, but without
+# one (a Kubernetes pod, a detached container) bash would read EOF and exit,
+# looking like a crash. Parking there instead lets orchestrators run the image
+# unmodified — no keep-alive command in the manifest. See scripts/climage-idle.sh.
+CMD ["climage-idle"]
 
 # Populated by CI from docker/metadata-action; see .github/workflows/ci.yml.
 ARG VERSION=dev

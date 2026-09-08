@@ -36,6 +36,11 @@ working directory. `tini` is PID 1 so long-lived agent sessions reap their child
 image is designed to be extended at runtime without root: `uv tool install` and
 `npm install -g` both work as the `climage` user, in interactive and login shells.
 
+The default command adapts to how the container was started: a terminal gets an
+interactive shell, piped stdin is run as a script, and a container with neither
+(a Kubernetes pod, a detached container) parks so you can exec into it. See
+[The default command](#the-default-command).
+
 ## Prerequisites
 
 - Docker 24+ with BuildKit (Docker 29 tested)
@@ -63,6 +68,48 @@ inside the container. Run as yourself to keep write access:
 ```bash
 docker run --rm -it --user "$(id -u):$(id -g)" -v "$PWD:/workspace" kr4t0n/climage
 ```
+
+### The default command
+
+`CMD` is `climage-idle`, a three-line dispatcher that picks a default based on
+stdin:
+
+| How the container starts | stdin | What runs |
+| --- | --- | --- |
+| `docker run -it climage` | terminal | `bash` — an interactive shell |
+| `echo 'ruff check .' \| docker run -i climage` | pipe or file | `bash`, reading stdin as a script |
+| Kubernetes pod, `docker run -d` | `/dev/null` | `sleep infinity` — parks, ready to be exec'd into |
+
+Passing your own command (`docker run climage rg -n TODO`) bypasses it entirely.
+
+The third row is the point: a bare `bash` would read EOF and exit 0, which an
+orchestrator reads as a container that refuses to stay up (`CrashLoopBackOff`).
+Keeping the keep-alive inside the image means deployment manifests run it
+unmodified — no `command: ["sleep", "infinity"]` in every Pod spec. `sleep` is
+`exec`'d rather than spawned, so `tini` still delivers SIGTERM straight to it and
+shutdown is immediate.
+
+### On Kubernetes
+
+The image runs unmodified as a long-lived agent sandbox. A chart lives in
+[kr4t0n/helm-charts](https://github.com/kr4t0n/helm-charts):
+
+```bash
+helm repo add kr4t0n https://kr4t0n.github.io/helm-charts
+helm install climage kr4t0n/climage -n climage --create-namespace
+kubectl -n climage exec -it deploy/climage -- bash -l
+```
+
+The chart mounts a PersistentVolume at `/home/climage`, so agent credentials,
+skills installed with the `skills` CLI, runtime `npm install -g` packages and the
+uv cache survive pod restarts. Two things the cluster has to get right:
+
+- **Volume ownership.** The container is uid/gid 1000 while a freshly
+  provisioned PVC is usually owned by `root`. Set `fsGroup: 1000` on the pod (or
+  use a provisioner that hands out world-writable volumes) or the agent cannot
+  write its own home directory.
+- **`/workspace` is not the home volume.** It comes from the image and is lost on
+  restart unless you mount something there too.
 
 ## Build, test, run
 
@@ -248,7 +295,8 @@ expected result, not a hardcoded value.
 ├── .env.example               # template for local publishing credentials
 ├── .pre-commit-config.yaml    # hadolint + shellcheck + hygiene hooks
 ├── scripts/
-│   └── entrypoint.sh          # workspace checks, optional init hook, exec
+│   ├── entrypoint.sh          # workspace checks, optional init hook, exec
+│   └── climage-idle.sh        # the default CMD: shell, script, or park
 ├── tests/
 │   └── smoke.sh               # tool inventory assertions, run inside the image
 └── .github/

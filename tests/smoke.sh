@@ -133,6 +133,33 @@ else
     failed=$((failed + 1))
 fi
 
+# The default command has to keep a headless container alive: a bare `bash`
+# exits on EOF, which an orchestrator reads as a crash loop. It must still run
+# whatever is piped in, so scripted `docker run -i` usage keeps working.
+if ! command -v climage-idle >/dev/null 2>&1; then
+    printf 'FAIL  %-14s not found on PATH\n' "climage-idle"
+    failed=$((failed + 1))
+else
+    rc=0
+    timeout 2 climage-idle </dev/null >/dev/null 2>&1 || rc=$?
+    if [[ ${rc} -eq 124 ]]; then
+        printf 'ok    %-14s parks when stdin is empty\n' "climage-idle"
+    else
+        printf 'FAIL  %-14s exited (%s) with no stdin; a pod would crash-loop\n' \
+            "climage-idle" "${rc}"
+        failed=$((failed + 1))
+    fi
+
+    rc=0
+    printf 'exit 7\n' | timeout 10 climage-idle >/dev/null 2>&1 || rc=$?
+    if [[ ${rc} -eq 7 ]]; then
+        printf 'ok    %-14s runs piped stdin as a script\n' "climage-idle"
+    else
+        printf 'FAIL  %-14s piped script returned %s, expected 7\n' "climage-idle" "${rc}"
+        failed=$((failed + 1))
+    fi
+fi
+
 if (( failed > 0 )); then
     echo "smoke: ${failed} check(s) failed" >&2
     exit 1
