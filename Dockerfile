@@ -25,10 +25,10 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG PYTHON_VERSION=3.12
 # Agent CLIs are pinned to exact versions rather than a dist-tag: both publish
 # several times a week, and a floating tag makes two builds of the same commit
-# produce different images. Note that Claude Code's `stable` tag intentionally
-# trails `latest`; the pin below tracks `stable`.
+# produce different images. Both CLIs track their npm `latest`; Claude Code also
+# publishes a slower `stable` tag, which this image deliberately does not use.
 ARG INSTALL_CLAUDE_CODE=true
-ARG CLAUDE_CODE_VERSION=2.1.236
+ARG CLAUDE_CODE_VERSION=2.1.263
 ARG INSTALL_CODEX=true
 ARG CODEX_VERSION=0.153.4
 ARG INSTALL_SKILLS=true

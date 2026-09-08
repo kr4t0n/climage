@@ -145,7 +145,7 @@ Every version is a build argument, so a variant image is a one-line change:
 | `UV_VERSION` | `0.12.5` | `uv`/`uvx` release copied from Astral's image |
 | `RUFF_VERSION` | `0.16.4` | `ruff` release copied from Astral's image |
 | `INSTALL_CLAUDE_CODE` | `true` | Set `false` to omit the Claude Code CLI |
-| `CLAUDE_CODE_VERSION` | `2.1.236` | Exact Claude Code version (npm `stable` channel) |
+| `CLAUDE_CODE_VERSION` | `2.1.263` | Exact Claude Code version (npm `latest`) |
 | `INSTALL_CODEX` | `true` | Set `false` to omit the Codex CLI |
 | `CODEX_VERSION` | `0.153.4` | Exact Codex CLI version (npm `latest`) |
 | `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |

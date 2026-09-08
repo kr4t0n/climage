@@ -139,13 +139,15 @@ System scripts keep working because their shebangs name `/usr/bin/python3`
 explicitly. This is done with plain symlinks rather than `uv python install
 --default`, which is still flagged experimental upstream.
 
-**Claude Code's `stable` npm tag trails `latest`.** `@anthropic-ai/claude-code`
-publishes `stable`, `latest`, and `next` dist-tags, where `latest` currently
-equals `next` and runs ahead of `stable`. "Latest stable" therefore means the
-`stable` tag, not `latest` — the two resolved to 2.1.231 and 2.1.245 at the time
-of pinning. `@openai/codex` has no `stable` tag; its non-`latest` tags are
-alpha/beta and platform-specific builds, so `latest` is the stable channel
-there. Check `npm view <pkg> dist-tags` before bumping either pin.
+**Both agent CLIs track npm `latest`, by choice.** `@anthropic-ai/claude-code`
+publishes `stable`, `latest`, and `next`, where `latest` equals `next` and runs
+ahead of `stable` — often by several weeks (2.1.236 vs 2.1.263 at the time of
+writing). `@openai/codex` publishes no `stable` tag at all; its non-`latest`
+tags are alpha/beta and platform-specific builds. Rather than have the two CLIs
+follow different release trains, both pins follow `latest`. The trade-off is
+deliberate: newer features, less soak time. Check `npm view <pkg> dist-tags`
+before bumping, and if a Claude Code release ever regresses, `stable` is the
+fallback channel to pin to.
 
 **The runtime user is renamed, not created.** `groupmod`/`usermod` rename the
 base image's `node` account to `climage` in place, so it keeps uid/gid 1000 —
