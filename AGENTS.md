@@ -38,6 +38,7 @@ Three inputs converge on one final stage:
 | --- | --- |
 | `Dockerfile` | Image definition. All version pins live here as build args. |
 | `scripts/entrypoint.sh` | Baked into the image. Warns on an unwritable workspace, sources an optional `CLIMAGE_INIT` hook, then `exec "$@"`. |
+| `scripts/climage-idle.sh` | Baked in as `/usr/local/bin/climage-idle`, the image's `CMD`. Dispatches on stdin: terminal → `bash`, pipe/file → `bash` reading it, neither → `sleep infinity`. |
 | `tests/smoke.sh` | **Not** baked in — bind-mounted at test time so the image stays free of test assets. Asserts the tool inventory. |
 | `Makefile` | The local equivalent of the CI jobs. Keep the two in sync. |
 | `.github/workflows/ci.yml` | lint → build & test → publish by digest → manifest. |
@@ -66,6 +67,17 @@ tooling without root.
 
 **`tini` as PID 1.** Agent sessions spawn long chains of subprocesses. Without an
 init, orphaned children accumulate as zombies and signals do not propagate.
+
+**The default command dispatches on stdin, and the keep-alive lives in the
+image.** `CMD` is `climage-idle`, not `bash`. An environment image has no single
+correct default: a terminal wants a shell, a pipe wants a script interpreter, and
+an orchestrator wants a process that stays up. `bash` only satisfies the first
+two — headless it reads EOF and exits 0, which Kubernetes reports as
+`CrashLoopBackOff`. The alternative was pushing `command: ["sleep", "infinity"]`
+into every deployment manifest, which spreads a property of the image across
+every consumer and (for Helm charts built on a shared library) demands a command
+override the library may not expose. `sleep` is `exec`'d, so it keeps the PID
+`tini` signals and shutdown stays immediate.
 
 **Optional groups are recorded, not guessed.** `INSTALL_MEDIA` and
 `INSTALL_BUILD_TOOLS` (like the agent-CLI flags) are written to
@@ -164,6 +176,17 @@ breaks — the smoke test asserts the identity so the contract is explicit.
 there into each agent's directory. Anything persisting agent state needs the
 whole home, not one subdirectory — and because skills are symlinks into
 `~/.agents`, persisting `~/.claude` alone yields dangling links.
+
+**A volume over `$HOME` hides the build-time home, and `climage-idle` changes
+what a detached container does.** Two consequences of the deployment story worth
+knowing before changing either. First, mounting a PVC at `/home/climage` shadows
+`~/.npm-global` and `~/.cache` as created in the build; npm and uv recreate them,
+and the toolchain is unaffected only because interpreters and `uv tool` installs
+live in `/opt/uv` — keep it that way. Second, `docker run --rm kr4t0n/climage`
+with no arguments and no terminal used to exit immediately (bash on EOF) and now
+blocks forever; scripts relying on that exit must pass an explicit command. The
+smoke test pins both branches of the dispatch (parks on `/dev/null`, runs a piped
+script), so a regression fails CI rather than a deployment.
 
 **Size levers, measured.** The image is ~2.0 GB unpacked (`docker image
 inspect` reports the *compressed* size, roughly a third of that — do not confuse
