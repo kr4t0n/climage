@@ -28,9 +28,9 @@ ARG PYTHON_VERSION=3.12
 # produce different images. Note that Claude Code's `stable` tag intentionally
 # trails `latest`; the pin below tracks `stable`.
 ARG INSTALL_CLAUDE_CODE=true
-ARG CLAUDE_CODE_VERSION=2.1.231
+ARG CLAUDE_CODE_VERSION=2.1.236
 ARG INSTALL_CODEX=true
-ARG CODEX_VERSION=0.149.1
+ARG CODEX_VERSION=0.153.4
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.5.23
 # Heavyweight package groups, measured: media pulls 172 packages / ~409 MB
