@@ -26,6 +26,7 @@ it to Docker Hub. There is no application code.
 | Shell & process | `bash`, `tmux`, `vim.tiny`, `htop`, `procps`, `shellcheck`, `tini` |
 | Archives | `unzip`, `zip`, `xz`, `bzip2`, `tar`, `gzip` |
 | Agent CLIs | `claude` (Claude Code), `codex` (OpenAI Codex), `skills` (open agent-skills manager) — all optional, on by default |
+| First-party | `argus-sidecar`, `argus-bg` — off by default, in the [`full`](#image-variants) variant |
 
 `python` and `python3` resolve to the uv-managed CPython (3.12 by default), not
 Debian's system interpreter — the pinned version is what runs, whichever name an
@@ -84,17 +85,26 @@ make push         # multi-arch build + push to Docker Hub (CI normally does this
 make help         # list all targets
 ```
 
-### Slim variants
+### Image variants
 
-Both variants are published; `slim` drops the media and build-tool groups.
+Three variants are published. `latest` is the one to use unless you need
+something it does not have.
 
-| Variant | Uncompressed | Compressed (registry) |
-| --- | --- | --- |
-| default | 2.0 GB | 698 MB |
-| `INSTALL_MEDIA=false INSTALL_BUILD_TOOLS=false` | 1.4 GB | 463 MB |
+| Tag | Contents | Uncompressed | Compressed (registry) |
+| --- | --- | --- | --- |
+| `latest` | everything in the table above | 2.0 GB | 698 MB |
+| `slim` | no media or build-tool packages | 1.4 GB | 463 MB |
+| `full` | `latest` plus first-party tooling (`argus-sidecar`, `argus-bg`) | +20 MB | +6 MB |
 
 ```bash
-docker pull kr4t0n/climage:slim
+docker pull kr4t0n/climage:full
+```
+
+Build any of them locally with the matching build args:
+
+```bash
+docker build --build-arg INSTALL_ARGUS=true -t climage:full .
+docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false -t climage:slim .
 ```
 
 ## Agent skills
@@ -134,6 +144,8 @@ agent permissions, so review a source before installing it.
 | `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
 | `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
 | `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |
+| `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar` and `argus-bg`; on in the `full` variant |
+| `ARGUS_VERSION` | `0.3.3` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
 | `SKILLS_VERSION` | `1.5.23` | Exact [skills](https://github.com/vercel-labs/skills) version |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
 

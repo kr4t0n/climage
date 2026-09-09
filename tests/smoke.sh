@@ -54,6 +54,7 @@ add_group "${INSTALL_BUILD_TOOLS:-true}" "make --version" "gcc --version"
 add_group "${INSTALL_CLAUDE_CODE:-true}" "claude --version"
 add_group "${INSTALL_CODEX:-true}" "codex --version"
 add_group "${INSTALL_SKILLS:-true}" "skills --version"
+add_group "${INSTALL_ARGUS:-false}" "argus-sidecar version" "argus-bg version"
 
 failed=0
 for entry in "${REQUIRED[@]}"; do

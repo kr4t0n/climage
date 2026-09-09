@@ -56,6 +56,20 @@ edit, and there is exactly one place to bump.
 
 **Binary copy over installer scripts.** `COPY --from` on a pinned image tag is
 reproducible and auditable; piping a remote script into a shell is neither.
+argus has no distribution image, so it is the one component fetched over HTTP —
+but by pinned release tag, verified against the release's own `SHASUMS256.txt`,
+rather than through its `curl … | sh` installer. The installer does check the
+same hashes; what it does not do is pin, and its "newest release" scan does not
+filter pre-releases, so an unpinned build could quietly ship an RC. The script
+itself is also served from a mutable branch. Adding a second first-party tool
+should follow the same shape.
+
+**Three variants, and `base` is the one that publishes as `latest`.** The ladder
+is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus
+first-party tooling). The CI matrix name for the default variant is `base`, not
+`full`, because `full` is now a published tag meaning "everything, including
+argus". Only the tag names are a public contract; the matrix names are internal
+and appear in cache scopes and digest artifact names.
 
 **Interpreters live in `/opt/uv`; uv tools live in `$HOME`.** The split is
 deliberate and the two halves answer opposite questions. Interpreters are large,
@@ -234,11 +248,12 @@ one GitHub Actions cache. Without `scope=${{ matrix.arch }}` on `cache-from` /
 `cache-to`, each architecture overwrites the other's layers every run and both
 lose their cache.
 
-**`latest` is the full build; `slim` is a separate tag, not a suffix.** The
-manifest job runs once per variant with its own tag rules. The slim variant sets
-`flavor: latest=false` — without it, `latest=auto` would point bare `latest` at
-the slim image on any release and clobber the full build. Deleting that line is
-a silent, hard-to-notice regression.
+**`latest` is the base build; `slim` and `full` are separate tags, not
+suffixes.** The manifest job runs once per variant with its own tag rules. Both
+non-default variants set `flavor: latest=false` — without it, `latest=auto`
+would point bare `latest` at whichever of them published last on a release and
+clobber the base build. Deleting either line is a silent, hard-to-notice
+regression.
 
 **There is no `edge` tag, deliberately.** `edge` distinguishes "newest main
 build" from "newest release" only when `latest` tracks releases exclusively.

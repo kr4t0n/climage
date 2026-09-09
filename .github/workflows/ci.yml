@@ -35,9 +35,11 @@ jobs:
       - name: Lint shell scripts
         run: shellcheck scripts/*.sh tests/*.sh
 
-  # Two variants x two architectures. Every architecture builds and smoke-tests
-  # on its own native runner: QEMU emulation of an arm64 apt layer costs tens of
-  # minutes, while a native arm runner is free for public repositories.
+  # Three variants x two architectures. `base` publishes as `latest`; `slim`
+  # drops the heavy apt groups; `full` adds the first-party tooling on top of
+  # base. Every architecture builds and smoke-tests on its own native runner:
+  # QEMU emulation of an arm64 apt layer costs tens of minutes, while a native
+  # arm runner is free for public repositories.
   build-test:
     name: Build & smoke test (${{ matrix.variant }}/${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -45,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [full, slim]
+        variant: [base, slim, full]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -58,6 +60,9 @@ jobs:
             build_args: |
               INSTALL_MEDIA=false
               INSTALL_BUILD_TOOLS=false
+          - variant: full
+            build_args: |
+              INSTALL_ARGUS=true
     steps:
       - uses: actions/checkout@v4
 
@@ -97,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [full, slim]
+        variant: [base, slim, full]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -110,6 +115,9 @@ jobs:
             build_args: |
               INSTALL_MEDIA=false
               INSTALL_BUILD_TOOLS=false
+          - variant: full
+            build_args: |
+              INSTALL_ARGUS=true
     steps:
       - uses: actions/checkout@v4
 
@@ -159,10 +167,10 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # One manifest per variant. `latest` is the full build; the slim build gets
-  # its own `slim` tag and `-slim`-suffixed release tags. There is deliberately
-  # no `edge`: with `latest` already tracking main, it was a second name for the
-  # same digest.
+  # One manifest per variant. `latest` is the base build; `slim` and `full` get
+  # their own bare tags and `-slim`/`-full`-suffixed release tags. There is
+  # deliberately no `edge`: with `latest` already tracking main, it was a second
+  # name for the same digest.
   manifest:
     name: Publish ${{ matrix.variant }} manifest
     runs-on: ubuntu-latest
@@ -173,7 +181,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - variant: full
+          - variant: base
             # latest=auto also moves `latest` onto a semver release tag.
             flavor: latest=auto
             tags: |
@@ -184,7 +192,7 @@ jobs:
               type=sha,format=short
           - variant: slim
             # Must be false, or a release would point bare `latest` at the slim
-            # image and clobber the full build.
+            # image and clobber the base build.
             flavor: latest=false
             tags: |
               type=raw,value=slim,enable={{is_default_branch}}
@@ -192,6 +200,15 @@ jobs:
               type=semver,pattern={{major}}.{{minor}},suffix=-slim
               type=semver,pattern={{major}},suffix=-slim
               type=sha,format=short,suffix=-slim
+          - variant: full
+            # Same reasoning as slim: never let this variant claim `latest`.
+            flavor: latest=false
+            tags: |
+              type=raw,value=full,enable={{is_default_branch}}
+              type=semver,pattern={{version}},suffix=-full
+              type=semver,pattern={{major}}.{{minor}},suffix=-full
+              type=semver,pattern={{major}},suffix=-full
+              type=sha,format=short,suffix=-full
     steps:
       - uses: actions/download-artifact@v8
         with:

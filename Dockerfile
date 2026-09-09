@@ -38,6 +38,10 @@ ARG SKILLS_VERSION=1.5.23
 # tools another ~231 MB. Both default on; turn either off for a slim variant.
 ARG INSTALL_MEDIA=true
 ARG INSTALL_BUILD_TOOLS=true
+# First-party tooling, off by default — the `full` image variant turns it on.
+# Pinned to an exact release for the same reason the agent CLIs are.
+ARG INSTALL_ARGUS=false
+ARG ARGUS_VERSION=0.3.3
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -177,6 +181,32 @@ RUN if [ "${INSTALL_CLAUDE_CODE}" = "true" ]; then \
     fi \
     && npm cache clean --force
 
+# --- First-party tooling ----------------------------------------------------
+# argus ships plain release binaries next to a SHASUMS256.txt manifest, so this
+# fetches and verifies them directly instead of piping the project's installer
+# into a shell. Two reasons, beyond the usual one: the installer resolves the
+# newest release at build time — and its scan does not exclude pre-releases, so
+# an unpinned build can land on an RC — and the script itself is served from a
+# mutable branch. This performs the same SHA-256 check against a pinned tag.
+ARG TARGETARCH
+RUN if [ "${INSTALL_ARGUS}" = "true" ]; then \
+        base="https://github.com/kr4t0n/argus/releases/download/argus-sidecar-v${ARGUS_VERSION}" \
+        && tmp="$(mktemp -d)" \
+        && curl -fsSL "${base}/SHASUMS256.txt" -o "${tmp}/SHASUMS256.txt" \
+        && for bin in argus-sidecar argus-bg; do \
+            asset="${bin}-linux-${TARGETARCH}" \
+            && curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}" \
+            # awk rewrites the manifest's bare filename to the temp path, and
+            # emits nothing at all if the asset is not listed — sha256sum then
+            # fails on an empty check list, so an unlisted or renamed asset
+            # cannot slip through unverified.
+            && awk -v a="${asset}" -v d="${tmp}" '$2 == a { print $1 "  " d "/" a }' \
+                 "${tmp}/SHASUMS256.txt" | sha256sum -c - \
+            && install -m 0755 "${tmp}/${asset}" "/usr/local/bin/${bin}"; \
+        done \
+        && rm -rf "${tmp}"; \
+    fi
+
 # Everything the unprivileged user installs at runtime lands in $HOME, so a
 # volume mounted there carries it across container restarts: npm globals in
 # .npm-global, uv tools in .uv. All three dirs precede /usr/local/bin on PATH.
@@ -197,9 +227,9 @@ RUN printf 'export PATH="%s/bin:%s:/opt/uv/bin:$PATH"\n' \
 
 # Record which optional groups this image was built with, so the smoke test can
 # require exactly what is meant to be present and users can introspect a pull.
-RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\n' \
+RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\n' \
         "${INSTALL_MEDIA}" "${INSTALL_BUILD_TOOLS}" "${INSTALL_CLAUDE_CODE}" \
-        "${INSTALL_CODEX}" "${INSTALL_SKILLS}" \
+        "${INSTALL_CODEX}" "${INSTALL_SKILLS}" "${INSTALL_ARGUS}" \
         > /etc/climage-build.env
 
 COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
