@@ -40,8 +40,8 @@ carries whatever an agent installs across restarts.
 
 The default command adapts to how the container was started: a terminal gets an
 interactive shell, piped stdin is run as a script, and a container with neither
-(a Kubernetes pod, a detached container) parks so you can exec into it. See
-[The default command](#the-default-command).
+(a Kubernetes pod, a detached container) parks so you can exec into it. Passing
+your own command bypasses it entirely.
 
 ## Prerequisites
 
@@ -71,49 +71,6 @@ inside the container. Run as yourself to keep write access:
 docker run --rm -it --user "$(id -u):$(id -g)" -v "$PWD:/workspace" kr4t0n/climage
 ```
 
-### The default command
-
-`CMD` is `climage-idle`, a three-line dispatcher that picks a default based on
-stdin:
-
-| How the container starts | stdin | What runs |
-| --- | --- | --- |
-| `docker run -it climage` | terminal | `bash` — an interactive shell |
-| `echo 'ruff check .' \| docker run -i climage` | pipe or file | `bash`, reading stdin as a script |
-| Kubernetes pod, `docker run -d` | `/dev/null` | `sleep infinity` — parks, ready to be exec'd into |
-
-Passing your own command (`docker run climage rg -n TODO`) bypasses it entirely.
-
-The third row is the point: a bare `bash` would read EOF and exit 0, which an
-orchestrator reads as a container that refuses to stay up (`CrashLoopBackOff`).
-Keeping the keep-alive inside the image means deployment manifests run it
-unmodified — no `command: ["sleep", "infinity"]` in every Pod spec. `sleep` is
-`exec`'d rather than spawned, so `tini` still delivers SIGTERM straight to it and
-shutdown is immediate.
-
-### On Kubernetes
-
-The image runs unmodified as a long-lived agent sandbox. A chart lives in
-[kr4t0n/helm-charts](https://github.com/kr4t0n/helm-charts):
-
-```bash
-helm repo add kr4t0n https://kr4t0n.github.io/helm-charts
-helm install climage kr4t0n/climage -n climage --create-namespace
-kubectl -n climage exec -it deploy/climage -- bash -l
-```
-
-The chart mounts a PersistentVolume at `/home/climage`, so agent credentials,
-skills installed with the `skills` CLI, runtime `npm install -g` packages,
-`uv tool install` tools and the uv cache survive pod restarts. Two things the
-cluster has to get right:
-
-- **Volume ownership.** The container is uid/gid 1000 while a freshly
-  provisioned PVC is usually owned by `root`. Set `fsGroup: 1000` on the pod (or
-  use a provisioner that hands out world-writable volumes) or the agent cannot
-  write its own home directory.
-- **`/workspace` is not the home volume.** It comes from the image and is lost on
-  restart unless you mount something there too.
-
 ## Build, test, run
 
 ```bash
@@ -127,38 +84,17 @@ make push         # multi-arch build + push to Docker Hub (CI normally does this
 make help         # list all targets
 ```
 
-The smoke test asserts that every tool in the table above resolves on `PATH`,
-that `uv` finds its managed interpreter without network access, and that
-`/workspace` is writable by the runtime user.
-
 ### Slim variants
 
-The two heaviest package groups are build args. Turning both off cuts the image
-by roughly a third:
+Both variants are published; `slim` drops the media and build-tool groups.
 
 | Variant | Uncompressed | Compressed (registry) |
 | --- | --- | --- |
 | default | 2.0 GB | 698 MB |
 | `INSTALL_MEDIA=false INSTALL_BUILD_TOOLS=false` | 1.4 GB | 463 MB |
 
-Both variants are published, so building one yourself is optional:
-
 ```bash
-docker pull kr4t0n/climage:slim      # published slim variant
-# or build it locally:
-docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false -t climage:slim .
-```
-
-Media is the single biggest group: ffmpeg alone pulls 153 packages, including
-LLVM, mesa GL drivers and a speech synthesiser, none of which a headless agent
-uses — but ffmpeg itself does not work without them. Drop the group entirely or
-keep it; there is no lighter middle ground in Debian.
-
-Each image records what it was built with, so a pulled image is
-self-describing:
-
-```bash
-docker run --rm kr4t0n/climage cat /etc/climage-build.env
+docker pull kr4t0n/climage:slim
 ```
 
 ## Agent skills
@@ -176,15 +112,12 @@ skills list --global
 Skills install to a canonical `~/.agents/skills/<name>/` and are symlinked into
 each agent's own directory (`~/.claude/skills/`, and Codex's universal location).
 Because that all lives under `$HOME`, a volume mounted at `/home/climage`
-persists installed skills along with agent credentials — see the note in
-[Configuration](#configuration). Skills execute with full agent permissions, so
-review a source before installing it.
+persists installed skills along with agent credentials. Skills execute with full
+agent permissions, so review a source before installing it.
 
 ## Configuration
 
 ### Build arguments
-
-Every version is a build argument, so a variant image is a one-line change:
 
 | Argument | Default | Purpose |
 | --- | --- | --- |
@@ -204,19 +137,6 @@ Every version is a build argument, so a variant image is a one-line change:
 | `SKILLS_VERSION` | `1.5.23` | Exact [skills](https://github.com/vercel-labs/skills) version |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
 
-```bash
-docker build --build-arg NODE_VERSION=22 --build-arg INSTALL_CLAUDE_CODE=false -t climage:node22 .
-```
-
-The agent CLIs are pinned to exact versions so a rebuild of a given commit
-reproduces the same image. Bumping one is a build-arg override or a one-line
-edit:
-
-```bash
-docker build --build-arg CODEX_VERSION=0.150.0 -t climage:codex-next .
-```
-```
-
 ### Runtime environment variables
 
 | Variable | Default | Purpose |
@@ -227,80 +147,13 @@ docker build --build-arg CODEX_VERSION=0.150.0 -t climage:codex-next .
 | `NPM_CONFIG_PREFIX` | `/home/climage/.npm-global` | Lets the unprivileged user `npm install -g` at runtime |
 | `LANG` | `en_US.UTF-8` | Locale is generated in the image |
 
-Pointing `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` at `$HOME` is the right default for a
-long-lived pod, but it is the wrong one for a derived image that wants tools
-baked into a layer — a home volume would shadow them. `/opt/uv/{tools,bin}`
-still exists and `/opt/uv/bin` is still on `PATH`, so that case is an override
-with no `PATH` surgery:
-
-```dockerfile
-FROM kr4t0n/climage:latest
-RUN UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/opt/uv/bin uv tool install pre-commit
-```
-
-Set the two variables on the `RUN` rather than with `ENV`, or the redirect
-outlives the build and the derived image's *runtime* `uv tool install`s stop
-persisting too.
-
 ### Publishing credentials
-
-Local pushes read `.env` (git-ignored); copy `.env.example` and fill it in. CI
-reads the same values from repository secrets — never commit a token.
 
 | Name | Where | Purpose |
 | --- | --- | --- |
 | `DOCKERHUB_USERNAME` | GitHub secret / `.env` | Docker Hub namespace and login |
 | `DOCKERHUB_TOKEN` | GitHub secret / `.env` | Docker Hub access token, Read & Write scope |
 | `IMAGE_NAME` | GitHub repo variable (optional) | Image name; defaults to `climage` |
-
-## Deployment
-
-`.github/workflows/ci.yml` runs on pull requests, pushes to `main`, and `v*`
-tags:
-
-1. **lint** — `hadolint` on the Dockerfile, `shellcheck` on the scripts.
-2. **build-test** — builds and smoke-tests both variants (full and slim) on
-   both architectures, each on a runner of its own architecture. Pull requests
-   stop here.
-3. **publish** — on `main` and `v*` tags only: every variant/architecture pair
-   is rebuilt on its native runner and pushed to Docker Hub *by digest*, with
-   SBOM and provenance attestations.
-4. **manifest** — one job per variant, assembling that variant's
-   per-architecture digests into a multi-arch tag set with
-   `docker buildx imagetools create`.
-
-Every architecture is built on a runner that natively speaks it — `ubuntu-latest`
-for amd64, `ubuntu-24.04-arm` for arm64 — rather than emulating arm64 through
-QEMU. Emulating an apt layer this size costs tens of minutes per build; native
-arm runners are the same speed as amd64 and free for public repositories.
-
-Tags produced by `docker/metadata-action`:
-
-| Trigger | Full build | Slim build |
-| --- | --- | --- |
-| Push to `main` | `latest`, `sha-<short>` | `slim`, `sha-<short>-slim` |
-| Tag `v1.4.2` | `1.4.2`, `1.4`, `1`, `latest`, `sha-<short>` | `1.4.2-slim`, `1.4-slim`, `1-slim`, `sha-<short>-slim` |
-
-`latest` always means the full build: on a release it moves to the tagged
-version, and on a `main` push it tracks the newest commit. `slim` is the same
-image without the media and build-tool groups. Only the `sha-*` tags are
-immutable — pin those, or a semver tag, for reproducibility.
-
-There is no `edge` tag. It existed to mean "newest `main` build" in the
-convention where `latest` tracks releases only, but this pipeline points
-`latest` at `main` too, so it was a second name for the same digest.
-
-To cut a release: `git tag v1.4.2 && git push origin v1.4.2`.
-
-### One-time setup
-
-1. Create the Docker Hub repository `kr4t0n/climage`.
-2. Add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` under **Settings → Secrets and
-   variables → Actions**.
-
-The published image name is `<DOCKERHUB_USERNAME>/<IMAGE_NAME>`, taken from the
-secret at publish time — the `kr4t0n/climage` used throughout this README is the
-expected result, not a hardcoded value.
 
 ## Project structure
 
