@@ -34,7 +34,9 @@ agent types.
 Runs as the unprivileged `climage` user (uid/gid 1000) with `/workspace` as the
 working directory. `tini` is PID 1 so long-lived agent sessions reap their children. The
 image is designed to be extended at runtime without root: `uv tool install` and
-`npm install -g` both work as the `climage` user, in interactive and login shells.
+`npm install -g` both work as the `climage` user, in interactive and login
+shells, and both write under `$HOME` — so a volume mounted at `/home/climage`
+carries whatever an agent installs across restarts.
 
 The default command adapts to how the container was started: a terminal gets an
 interactive shell, piped stdin is run as a script, and a container with neither
@@ -101,8 +103,9 @@ kubectl -n climage exec -it deploy/climage -- bash -l
 ```
 
 The chart mounts a PersistentVolume at `/home/climage`, so agent credentials,
-skills installed with the `skills` CLI, runtime `npm install -g` packages and the
-uv cache survive pod restarts. Two things the cluster has to get right:
+skills installed with the `skills` CLI, runtime `npm install -g` packages,
+`uv tool install` tools and the uv cache survive pod restarts. Two things the
+cluster has to get right:
 
 - **Volume ownership.** The container is uid/gid 1000 while a freshly
   provisioned PVC is usually owned by `root`. Set `fsGroup: 1000` on the pod (or
@@ -220,9 +223,24 @@ docker build --build-arg CODEX_VERSION=0.150.0 -t climage:codex-next .
 | --- | --- | --- |
 | `CLIMAGE_INIT` | unset | Path to a script the entrypoint sources before the command — use it for per-container bootstrap |
 | `UV_CACHE_DIR` | `/home/climage/.cache/uv` | Mount a volume here to persist Python downloads |
-| `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` | `/opt/uv/tools`, `/opt/uv/bin` | Where `uv tool install` puts tools and their entry points (writable by `node`, on `PATH`) |
+| `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` | `/home/climage/.uv/tools`, `/home/climage/.uv/bin` | Where `uv tool install` puts tools and their entry points — under `$HOME`, so a home volume persists them |
 | `NPM_CONFIG_PREFIX` | `/home/climage/.npm-global` | Lets the unprivileged user `npm install -g` at runtime |
 | `LANG` | `en_US.UTF-8` | Locale is generated in the image |
+
+Pointing `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` at `$HOME` is the right default for a
+long-lived pod, but it is the wrong one for a derived image that wants tools
+baked into a layer — a home volume would shadow them. `/opt/uv/{tools,bin}`
+still exists and `/opt/uv/bin` is still on `PATH`, so that case is an override
+with no `PATH` surgery:
+
+```dockerfile
+FROM kr4t0n/climage:latest
+RUN UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/opt/uv/bin uv tool install pre-commit
+```
+
+Set the two variables on the `RUN` rather than with `ENV`, or the redirect
+outlives the build and the derived image's *runtime* `uv tool install`s stop
+persisting too.
 
 ### Publishing credentials
 

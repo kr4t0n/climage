@@ -146,11 +146,10 @@ RUN groupmod -n "${USERNAME}" node \
 COPY --from=uv-bin /uv /uvx /usr/local/bin/
 COPY --from=ruff-bin /ruff /usr/local/bin/ruff
 
-# Interpreters and uv-managed tools live outside $HOME so they survive a
-# mounted-over home directory and stay shared across users.
+# Interpreters live outside $HOME: they are large, shared across users, and a
+# mounted-over home must not hide the toolchain. uv *tools* go the other way —
+# see the runtime-extension block below.
 ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
-    UV_TOOL_DIR=/opt/uv/tools \
-    UV_TOOL_BIN_DIR=/opt/uv/bin \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1
 
@@ -159,7 +158,10 @@ RUN uv python install "${PYTHON_VERSION}" \
     # comes first on PATH, so `python`/`python3` mean the pinned interpreter.
     && ln -sfn "$(uv python find "${PYTHON_VERSION}")" /usr/local/bin/python3 \
     && ln -sfn "$(uv python find "${PYTHON_VERSION}")" /usr/local/bin/python \
-    && mkdir -p "${UV_TOOL_DIR}" "${UV_TOOL_BIN_DIR}" \
+    # Kept for derived images that point UV_TOOL_DIR/UV_TOOL_BIN_DIR back here to
+    # bake tools into a layer; /opt/uv/bin stays on PATH so that is a one-line
+    # ENV override with no PATH surgery.
+    && mkdir -p /opt/uv/tools /opt/uv/bin \
     && chown -R "${USERNAME}:${USERNAME}" /opt/uv \
     && chmod -R a+rX /opt/uv
 
@@ -175,17 +177,22 @@ RUN if [ "${INSTALL_CLAUDE_CODE}" = "true" ]; then \
     fi \
     && npm cache clean --force
 
-# Let the unprivileged user install more tooling at runtime: npm globals land
-# in $HOME, uv tools in /opt/uv/bin. Both precede /usr/local/bin on PATH.
-ENV NPM_CONFIG_PREFIX=/home/${USERNAME}/.npm-global
-ENV PATH=/home/${USERNAME}/.npm-global/bin:/opt/uv/bin:${PATH}
+# Everything the unprivileged user installs at runtime lands in $HOME, so a
+# volume mounted there carries it across container restarts: npm globals in
+# .npm-global, uv tools in .uv. All three dirs precede /usr/local/bin on PATH.
+ENV NPM_CONFIG_PREFIX=/home/${USERNAME}/.npm-global \
+    UV_TOOL_DIR=/home/${USERNAME}/.uv/tools \
+    UV_TOOL_BIN_DIR=/home/${USERNAME}/.uv/bin
+ENV PATH=/home/${USERNAME}/.npm-global/bin:/home/${USERNAME}/.uv/bin:/opt/uv/bin:${PATH}
 
 # Debian's /etc/profile overwrites PATH wholesale, so a login shell
 # (`bash -lc ...`, as agents often spawn) would lose the directories above.
-RUN printf 'export PATH="%s/bin:/opt/uv/bin:$PATH"\n' "${NPM_CONFIG_PREFIX}" \
+RUN printf 'export PATH="%s/bin:%s:/opt/uv/bin:$PATH"\n' \
+        "${NPM_CONFIG_PREFIX}" "${UV_TOOL_BIN_DIR}" \
         > /etc/profile.d/10-climage-path.sh \
     && chmod 0644 /etc/profile.d/10-climage-path.sh \
-    && mkdir -p "${NPM_CONFIG_PREFIX}" "/home/${USERNAME}/.cache" /workspace \
+    && mkdir -p "${NPM_CONFIG_PREFIX}" "${UV_TOOL_DIR}" "${UV_TOOL_BIN_DIR}" \
+        "/home/${USERNAME}/.cache" /workspace \
     && chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}" /workspace
 
 # Record which optional groups this image was built with, so the smoke test can

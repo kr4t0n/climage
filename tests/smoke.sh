@@ -95,7 +95,7 @@ fi
 
 # `uv tool install` must work unprivileged: its bin dir has to be writable and
 # on PATH. (Checked without a network round-trip.)
-tool_bin="${UV_TOOL_BIN_DIR:-/opt/uv/bin}"
+tool_bin="${UV_TOOL_BIN_DIR:-/home/climage/.uv/bin}"
 if [[ -w "${tool_bin}" && ":${PATH}:" == *":${tool_bin}:"* ]]; then
     printf 'ok    %-14s writable and on PATH\n' "uv tool bin"
 else
@@ -103,13 +103,23 @@ else
     failed=$((failed + 1))
 fi
 
+# uv tools must land under $HOME, so a volume mounted there carries runtime
+# `uv tool install`s across restarts. Moving them back out is a silent
+# regression for every long-lived deployment.
+if [[ "${UV_TOOL_DIR:-}" == "${HOME}/"* && "${tool_bin}" == "${HOME}/"* ]]; then
+    printf 'ok    %-14s under %s, survives a home volume\n' "uv tool dir" "${HOME}"
+else
+    printf 'FAIL  %-14s %s must live under %s\n' "uv tool dir" "${UV_TOOL_DIR:-<unset>}" "${HOME}"
+    failed=$((failed + 1))
+fi
+
 # A login shell must keep the extra tool directories on PATH — /etc/profile
 # rewrites PATH from scratch, so this needs an explicit profile drop-in.
 if bash -lc 'command -v uv && command -v claude' >/dev/null 2>&1 \
-    || bash -lc '[[ ":$PATH:" == *":/opt/uv/bin:"* ]]'; then
+    || bash -lc "[[ \":\$PATH:\" == *\":${tool_bin}:\"* ]]"; then
     printf 'ok    %-14s tool dirs survive /etc/profile\n' "login PATH"
 else
-    printf 'FAIL  %-14s login shell drops /opt/uv/bin from PATH\n' "login PATH"
+    printf 'FAIL  %-14s login shell drops %s from PATH\n' "login PATH" "${tool_bin}"
     failed=$((failed + 1))
 fi
 

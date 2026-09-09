@@ -57,13 +57,21 @@ edit, and there is exactly one place to bump.
 **Binary copy over installer scripts.** `COPY --from` on a pinned image tag is
 reproducible and auditable; piping a remote script into a shell is neither.
 
-**Interpreters and uv tools live in `/opt/uv`, not `$HOME`.** Home directories
-get mounted over in real deployments. `/opt/uv` is `chown`ed to `node` so the
-unprivileged user can still run `uv tool install` at runtime.
+**Interpreters live in `/opt/uv`; uv tools live in `$HOME`.** The split is
+deliberate and the two halves answer opposite questions. Interpreters are large,
+shared, and part of the toolchain the image promises — a PVC mounted at
+`/home/climage` must not hide them, so `UV_PYTHON_INSTALL_DIR=/opt/uv/python`.
+Tools are the opposite: an agent installs them at runtime and expects them to
+still be there after a pod restart, which only happens if they land on that same
+volume — so `UV_TOOL_DIR`/`UV_TOOL_BIN_DIR` point into `/home/climage/.uv`.
+`/opt/uv` stays `chown`ed to the runtime user and `/opt/uv/bin` stays on `PATH`,
+so a derived image that wants tools in a layer instead of on a volume overrides
+the two vars and needs no `PATH` change.
 
 **Runtime-writable global npm prefix.** `NPM_CONFIG_PREFIX=/home/climage/.npm-global`
 is on `PATH` ahead of `/usr/local/bin`, so an agent can `npm install -g` more
-tooling without root.
+tooling without root. Same reasoning as uv tools: in `$HOME`, therefore on the
+volume, therefore still installed after a restart.
 
 **`tini` as PID 1.** Agent sessions spawn long chains of subprocesses. Without an
 init, orphaned children accumulate as zombies and signals do not propagate.
@@ -136,14 +144,16 @@ un-ignore line, or the build fails with "file not found".
 
 **`/etc/profile` overwrites `PATH`.** Debian sets `PATH` from scratch for login
 shells, so `bash -lc '...'` — a very common way for agents to run commands —
-would lose `/opt/uv/bin` and the npm global prefix that the `ENV PATH` line
-adds. `/etc/profile.d/10-climage-path.sh` puts them back. The smoke test asserts
-this; do not delete the drop-in as redundant with `ENV PATH`.
+would lose `~/.uv/bin`, `/opt/uv/bin` and the npm global prefix that the
+`ENV PATH` line adds. `/etc/profile.d/10-climage-path.sh` puts them back. The
+smoke test asserts this; do not delete the drop-in as redundant with `ENV PATH`.
+The drop-in interpolates `UV_TOOL_BIN_DIR` at build time rather than hardcoding
+it, so moving the tool dir stays a one-line change.
 
 **`uv tool` bin dir must be user-writable.** Pointing `UV_TOOL_BIN_DIR` at
 `/usr/local/bin` looks tidy but breaks `uv tool install` for the unprivileged
-user with `Permission denied`. It lives at `/opt/uv/bin`, chowned to `node` and
-on `PATH`.
+user with `Permission denied`. It lives at `/home/climage/.uv/bin`, created and
+chowned in the build, and on `PATH`.
 
 **`python3` is a symlink, not Debian's interpreter.** `/usr/local/bin/python3`
 points into `/opt/uv/python/...` and wins over `/usr/bin/python3` on `PATH`.
@@ -180,9 +190,13 @@ whole home, not one subdirectory — and because skills are symlinks into
 **A volume over `$HOME` hides the build-time home, and `climage-idle` changes
 what a detached container does.** Two consequences of the deployment story worth
 knowing before changing either. First, mounting a PVC at `/home/climage` shadows
-`~/.npm-global` and `~/.cache` as created in the build; npm and uv recreate them,
-and the toolchain is unaffected only because interpreters and `uv tool` installs
-live in `/opt/uv` — keep it that way. Second, `docker run --rm kr4t0n/climage`
+`~/.npm-global`, `~/.uv` and `~/.cache` as created in the build; npm and uv
+recreate them on demand, and the toolchain itself is unaffected because the
+interpreters live in `/opt/uv` — keep *those* out of `$HOME`. The corollary is
+that anything the build installs through `npm install -g` or `uv tool install`
+is invisible at runtime under a home volume, which is why the agent CLIs are
+installed as root into `/usr/local` (the base image's npm prefix at that point)
+and not through the runtime prefix. Second, `docker run --rm kr4t0n/climage`
 with no arguments and no terminal used to exit immediately (bash on EOF) and now
 blocks forever; scripts relying on that exit must pass an explicit command. The
 smoke test pins both branches of the dispatch (parks on `/dev/null`, runs a piped
