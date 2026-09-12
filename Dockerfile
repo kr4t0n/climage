@@ -38,6 +38,12 @@ ARG SKILLS_VERSION=1.5.23
 # tools another ~231 MB. Both default on; turn either off for a slim variant.
 ARG INSTALL_MEDIA=true
 ARG INSTALL_BUILD_TOOLS=true
+# Headless-browser system libraries, off by default — the `full` variant turns
+# them on. Deps only, no browser binary: a Playwright/Puppeteer browser build
+# has to match the client library version, so baking one in would just be
+# re-downloaded by any project on a different version. The libraries are the
+# part that needs root, and the part that is version-agnostic.
+ARG INSTALL_BROWSER=false
 # First-party tooling, off by default — the `full` image variant turns it on.
 # Pinned to an exact release for the same reason the agent CLIs are.
 ARG INSTALL_ARGUS=false
@@ -119,6 +125,36 @@ RUN apt-get update \
         apt-get install -y --no-install-recommends \
             build-essential \
             pkg-config; \
+    fi \
+    # Chromium links the ATK/AT-SPI accessibility stack and several X11
+    # extensions unconditionally, headless included, so these are not optional
+    # for a browser that starts at all. fonts-liberation keeps screenshots from
+    # rendering as boxes. On Debian 13 the three libat* names gain a `t64`
+    # suffix (the 64-bit time_t transition) — see AGENTS.md.
+    && if [ "${INSTALL_BROWSER}" = "true" ]; then \
+        apt-get install -y --no-install-recommends \
+            libatk1.0-0 \
+            libatk-bridge2.0-0 \
+            libatspi2.0-0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxrandr2 \
+            libxkbcommon0 \
+            libxext6 \
+            libx11-6 \
+            libxcb1 \
+            libnss3 \
+            libnspr4 \
+            libcups2 \
+            libdbus-1-3 \
+            libdrm2 \
+            libgbm1 \
+            libasound2 \
+            libpango-1.0-0 \
+            libcairo2 \
+            libglib2.0-0 \
+            fonts-liberation; \
     fi \
     && rm -rf /var/lib/apt/lists/* \
     # Debian ships these under alternate names to avoid binary clashes.
@@ -227,9 +263,10 @@ RUN printf 'export PATH="%s/bin:%s:/opt/uv/bin:$PATH"\n' \
 
 # Record which optional groups this image was built with, so the smoke test can
 # require exactly what is meant to be present and users can introspect a pull.
-RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\n' \
-        "${INSTALL_MEDIA}" "${INSTALL_BUILD_TOOLS}" "${INSTALL_CLAUDE_CODE}" \
-        "${INSTALL_CODEX}" "${INSTALL_SKILLS}" "${INSTALL_ARGUS}" \
+RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_BROWSER=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\n' \
+        "${INSTALL_MEDIA}" "${INSTALL_BUILD_TOOLS}" "${INSTALL_BROWSER}" \
+        "${INSTALL_CLAUDE_CODE}" "${INSTALL_CODEX}" "${INSTALL_SKILLS}" \
+        "${INSTALL_ARGUS}" \
         > /etc/climage-build.env
 
 COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh

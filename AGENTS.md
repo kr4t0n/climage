@@ -232,6 +232,33 @@ explicitly re-included for licence compliance. Likewise `/usr/share/i18n` is
 removed only *after* `locale-gen`, which compiles what it needs into
 `/usr/lib/locale`.
 
+**The image ships no apt package index.** Every apt layer ends with
+`rm -rf /var/lib/apt/lists/*`, so a fresh container has nothing to resolve
+against and `apt-get install <anything>` fails with `E: Unable to locate
+package` — which reads exactly like the package not existing in Debian. Any
+runtime install needs `apt-get update` first (and root, via `docker exec -u 0`).
+This has already cost one debugging session, chasing package names that were
+present all along.
+
+**Browser support is libraries only, never a browser binary.** `INSTALL_BROWSER`
+installs the ATK/AT-SPI stack, X11 extensions and fonts that Chromium links
+unconditionally — headless included. It deliberately does not bake in a
+Playwright or Puppeteer browser build: those are version-coupled to the client
+library, so a bundled copy is re-downloaded by any project on a different
+version while still costing image size. The libraries are the part that needs
+root and the part that is version-agnostic, so that is the part the image owns.
+
+**The browser group is nearly free, but only inside the media group.** It adds
+~18 MB because ffmpeg already pulls mesa, libdrm, libgbm and libasound, and
+ImageMagick pulls cairo, pango and glib. On a `slim` build (`INSTALL_MEDIA=false`)
+the same group would drag that whole chain in — do not assume the cost carries
+over between variants.
+
+**Three browser library names change on Debian 13.** `libatk1.0-0`,
+`libatk-bridge2.0-0` and `libatspi2.0-0` become `…t64` under the 64-bit `time_t`
+transition; `libxcomposite1` and `libxdamage1` keep their names. Bumping
+`DEBIAN_SUITE` to trixie breaks this group until those three are renamed.
+
 **Host uid mismatch on bind mounts.** The image runs as uid 1000. On a host
 where the user is not 1000, files written into a mounted `/workspace` land with
 the wrong owner. The entrypoint warns rather than `chown`ing — silently

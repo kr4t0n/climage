@@ -94,7 +94,7 @@ something it does not have.
 | --- | --- | --- | --- |
 | `latest` | everything in the table above | 2.0 GB | 698 MB |
 | `slim` | no media or build-tool packages | 1.4 GB | 463 MB |
-| `full` | `latest` plus first-party tooling (`argus-sidecar`, `argus-bg`) | +20 MB | +6 MB |
+| `full` | `latest` plus first-party tooling (`argus-sidecar`, `argus-bg`) and the headless-browser libraries | +30 MB | +14 MB |
 
 ```bash
 docker pull kr4t0n/climage:full
@@ -103,8 +103,34 @@ docker pull kr4t0n/climage:full
 Build any of them locally with the matching build args:
 
 ```bash
-docker build --build-arg INSTALL_ARGUS=true -t climage:full .
+docker build --build-arg INSTALL_ARGUS=true --build-arg INSTALL_BROWSER=true -t climage:full .
 docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false -t climage:slim .
+```
+
+### Headless browsers
+
+The `full` variant ships the system libraries Chromium needs, so Playwright and
+Puppeteer work as the unprivileged user with no `apt` and no root:
+
+```bash
+docker run --rm kr4t0n/climage:full bash -lc \
+    'npm i playwright && npx playwright install chromium && node my-script.js'
+```
+
+Only the libraries are baked in, not a browser binary — a Playwright browser
+build must match the client library version, so a bundled one would simply be
+re-downloaded by any project on a different version. `playwright install`
+downloads into `~/.cache/ms-playwright`, which a volume mounted at
+`/home/climage` will persist.
+
+On `latest` or `slim` the same script fails when Chromium starts. Installing the
+libraries at runtime needs root *and* an `apt-get update` first, because the
+image ships no package index:
+
+```bash
+docker exec -u 0 <container> bash -lc 'apt-get update && apt-get install -y \
+    --no-install-recommends libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
+    libxcomposite1 libxdamage1'
 ```
 
 ## Agent skills
@@ -145,6 +171,7 @@ agent permissions, so review a source before installing it.
 | `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
 | `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |
 | `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar` and `argus-bg`; on in the `full` variant |
+| `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in the `full` variant — ~18 MB, since the media group already provides most of the chain |
 | `ARGUS_VERSION` | `0.3.3` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
 | `SKILLS_VERSION` | `1.5.23` | Exact [skills](https://github.com/vercel-labs/skills) version |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |

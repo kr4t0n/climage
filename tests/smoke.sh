@@ -56,6 +56,21 @@ add_group "${INSTALL_CODEX:-true}" "codex --version"
 add_group "${INSTALL_SKILLS:-true}" "skills --version"
 add_group "${INSTALL_ARGUS:-false}" "argus-sidecar version" "argus-bg version"
 
+# The browser group installs shared libraries, not commands, so it is checked
+# against the linker cache rather than PATH. These are the names Chromium fails
+# to start without; a missing one surfaces as an opaque exit code from
+# Playwright, so asserting them here is what makes that failure legible.
+BROWSER_LIBS=(
+    libatk-1.0.so.0
+    libatk-bridge-2.0.so.0
+    libatspi.so.0
+    libXcomposite.so.1
+    libXdamage.so.1
+    libnss3.so
+    libgbm.so.1
+    libasound.so.2
+)
+
 failed=0
 for entry in "${REQUIRED[@]}"; do
     read -r cmd flag <<<"${entry}"
@@ -169,6 +184,21 @@ else
         printf 'FAIL  %-14s piped script returned %s, expected 7\n' "climage-idle" "${rc}"
         failed=$((failed + 1))
     fi
+fi
+
+if [[ "${INSTALL_BROWSER:-false}" == "true" ]]; then
+    missing=()
+    for lib in "${BROWSER_LIBS[@]}"; do
+        ldconfig -p | grep -q "${lib}" || missing+=("${lib}")
+    done
+    if (( ${#missing[@]} == 0 )); then
+        printf 'ok    %-14s %d chromium libs present\n' "browser libs" "${#BROWSER_LIBS[@]}"
+    else
+        printf 'FAIL  %-14s missing: %s\n' "browser libs" "${missing[*]}"
+        failed=$((failed + 1))
+    fi
+else
+    printf 'skip  %-14s not installed (INSTALL_BROWSER=false)\n' "browser libs"
 fi
 
 if (( failed > 0 )); then

@@ -37,7 +37,8 @@ jobs:
 
   # Three variants x two architectures. `base` publishes as `latest`; `slim`
   # drops the heavy apt groups; `full` adds the first-party tooling on top of
-  # base. Every architecture builds and smoke-tests on its own native runner:
+  # base, plus the headless-browser libraries. Every architecture builds and
+# smoke-tests on its own native runner:
   # QEMU emulation of an arm64 apt layer costs tens of minutes, while a native
   # arm runner is free for public repositories.
   build-test:
@@ -63,6 +64,7 @@ jobs:
           - variant: full
             build_args: |
               INSTALL_ARGUS=true
+              INSTALL_BROWSER=true
     steps:
       - uses: actions/checkout@v4
 
@@ -118,6 +120,7 @@ jobs:
           - variant: full
             build_args: |
               INSTALL_ARGUS=true
+              INSTALL_BROWSER=true
     steps:
       - uses: actions/checkout@v4
 
