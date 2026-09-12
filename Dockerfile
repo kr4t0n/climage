@@ -12,8 +12,8 @@
 
 ARG NODE_VERSION=24
 ARG DEBIAN_SUITE=bookworm
-ARG UV_VERSION=0.12.5
-ARG RUFF_VERSION=0.16.4
+ARG UV_VERSION=0.12.13
+ARG RUFF_VERSION=0.16.7
 
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv-bin
 FROM ghcr.io/astral-sh/ruff:${RUFF_VERSION} AS ruff-bin
@@ -28,11 +28,11 @@ ARG PYTHON_VERSION=3.12
 # produce different images. Both CLIs track their npm `latest`; Claude Code also
 # publishes a slower `stable` tag, which this image deliberately does not use.
 ARG INSTALL_CLAUDE_CODE=true
-ARG CLAUDE_CODE_VERSION=2.1.263
+ARG CLAUDE_CODE_VERSION=2.1.269
 ARG INSTALL_CODEX=true
-ARG CODEX_VERSION=0.153.4
+ARG CODEX_VERSION=0.154.0
 ARG INSTALL_SKILLS=true
-ARG SKILLS_VERSION=1.5.23
+ARG SKILLS_VERSION=1.5.26
 # Heavyweight package groups, measured: media pulls 172 packages / ~409 MB
 # (ffmpeg alone drags in LLVM, mesa GL drivers and a speech synthesiser), build
 # tools another ~231 MB. Both default on; turn either off for a slim variant.

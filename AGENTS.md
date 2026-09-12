@@ -177,7 +177,7 @@ explicitly. This is done with plain symlinks rather than `uv python install
 
 **Both agent CLIs track npm `latest`, by choice.** `@anthropic-ai/claude-code`
 publishes `stable`, `latest`, and `next`, where `latest` equals `next` and runs
-ahead of `stable` — often by several weeks (2.1.236 vs 2.1.263 at the time of
+ahead of `stable` — often by several weeks (2.1.236 vs 2.1.269 at the time of
 writing). `@openai/codex` publishes no `stable` tag at all; its non-`latest`
 tags are alpha/beta and platform-specific builds. Rather than have the two CLIs
 follow different release trains, both pins follow `latest`. The trade-off is
