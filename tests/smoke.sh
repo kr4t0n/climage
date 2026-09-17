@@ -139,6 +139,17 @@ else
     failed=$((failed + 1))
 fi
 
+# SHELL must be exported, not merely visible: this script runs under bash, which
+# assigns SHELL itself when it is unset, so "${SHELL}" here would always pass.
+# printenv is a separate process and sees only the exported environment.
+shell_env=$(printenv SHELL || true)
+if [[ "${shell_env}" == "/bin/bash" ]]; then
+    printf 'ok    %-14s exported as %s\n' "SHELL" "${shell_env}"
+else
+    printf 'FAIL  %-14s exported as %s, expected /bin/bash\n' "SHELL" "${shell_env:-<unset>}"
+    failed=$((failed + 1))
+fi
+
 # The runtime identity is part of the image's contract: uid 1000 keeps
 # bind-mounted host files sanely owned, and $HOME must match the account.
 whoami_actual=$(id -un)

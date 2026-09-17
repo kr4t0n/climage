@@ -185,6 +185,17 @@ deliberate: newer features, less soak time. Check `npm view <pkg> dist-tags`
 before bumping, and if a Claude Code release ever regresses, `stable` is the
 fallback channel to pin to.
 
+**`SHELL` is set with `ENV`, and checking it from bash lies.** Docker sets no
+`SHELL` of its own, and the `SHELL` Dockerfile directive only governs `RUN`
+steps. Agents and tools read `$SHELL` to pick the shell they spawn, and without
+it fall back to `/bin/sh` — dash on Debian, which rejects `[[ ]]`, arrays and
+`pipefail`. It lives in `ENV` rather than `entrypoint.sh` because `docker exec`,
+which orchestrators use against a running container, bypasses the entrypoint.
+Verifying it is its own trap: bash assigns `SHELL` from the passwd entry when
+it is unset but does not export it, so `echo $SHELL` in a bash session prints
+`/bin/bash` while every child process still sees nothing. Check with
+`printenv SHELL`, a separate process, as the smoke test does.
+
 **The runtime user is renamed, not created.** `groupmod`/`usermod` rename the
 base image's `node` account to `climage` in place, so it keeps uid/gid 1000 —
 the value that makes bind-mounted host files land with usable ownership for a

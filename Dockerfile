@@ -275,9 +275,13 @@ COPY --chmod=0755 scripts/climage-idle.sh /usr/local/bin/climage-idle
 USER ${USERNAME}
 WORKDIR /workspace
 
+# SHELL must be exported here, not in the entrypoint: `docker exec` bypasses the
+# entrypoint, and bash only sets SHELL as an unexported variable. Without it,
+# agents that spawn "$SHELL" fall back to /bin/sh, which is dash.
 ENV UV_CACHE_DIR=/home/${USERNAME}/.cache/uv \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    NODE_ENV=development
+    NODE_ENV=development \
+    SHELL=/bin/bash
 
 # tini reaps the zombies long-lived agent sessions leave behind.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]

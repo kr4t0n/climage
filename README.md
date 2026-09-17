@@ -185,6 +185,7 @@ agent permissions, so review a source before installing it.
 | `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` | `/home/climage/.uv/tools`, `/home/climage/.uv/bin` | Where `uv tool install` puts tools and their entry points — under `$HOME`, so a home volume persists them |
 | `NPM_CONFIG_PREFIX` | `/home/climage/.npm-global` | Lets the unprivileged user `npm install -g` at runtime |
 | `LANG` | `en_US.UTF-8` | Locale is generated in the image |
+| `SHELL` | `/bin/bash` | Shell that agents and tools spawn; without it they fall back to `/bin/sh` (dash) |
 
 ### Publishing credentials
 
