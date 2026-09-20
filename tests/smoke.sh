@@ -152,12 +152,26 @@ fi
 
 # The runtime identity is part of the image's contract: uid 1000 keeps
 # bind-mounted host files sanely owned, and $HOME must match the account.
+# the shared `users` gid (100) is what lets an arbitrary-uid run keep group access.
 whoami_actual=$(id -un)
-if [[ "${whoami_actual}" == "climage" && "$(id -u)" == "1000" && "${HOME}" == "/home/climage" ]]; then
-    printf 'ok    %-14s %s (uid %s), HOME=%s\n' "identity" "${whoami_actual}" "$(id -u)" "${HOME}"
+if [[ "${whoami_actual}" == "climage" && "$(id -u)" == "1000" \
+    && "$(id -g)" == "100" && "$(id -gn)" == "users" && "${HOME}" == "/home/climage" ]]; then
+    printf 'ok    %-14s %s (uid %s, gid %s/%s), HOME=%s\n' \
+        "identity" "${whoami_actual}" "$(id -u)" "$(id -g)" "$(id -gn)" "${HOME}"
 else
-    printf 'FAIL  %-14s got %s (uid %s) HOME=%s, expected climage/1000//home/climage\n' \
-        "identity" "${whoami_actual}" "$(id -u)" "${HOME}"
+    printf 'FAIL  %-14s got %s (uid %s, gid %s/%s) HOME=%s, expected climage/1000/100/users//home/climage\n' \
+        "identity" "${whoami_actual}" "$(id -u)" "$(id -g)" "$(id -gn)" "${HOME}"
+    failed=$((failed + 1))
+fi
+
+# Nothing may be left group-owned by the retired gid 1000: those files would
+# carry a group that no longer exists in the image, and would silently match an
+# unrelated host group of the same gid through a bind mount.
+orphan=$(find /opt/uv "${HOME}" /workspace -gid 1000 -print -quit 2>/dev/null)
+if [[ -z "${orphan}" ]]; then
+    printf 'ok    %-14s no files left on the retired gid 1000\n' "group cleanup"
+else
+    printf 'FAIL  %-14s %s (and possibly others) still owned by gid 1000\n' "group cleanup" "${orphan}"
     failed=$((failed + 1))
 fi
 

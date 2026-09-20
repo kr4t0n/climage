@@ -32,7 +32,8 @@ it to Docker Hub. There is no application code.
 Debian's system interpreter — the pinned version is what runs, whichever name an
 agent types.
 
-Runs as the unprivileged `climage` user (uid/gid 1000) with `/workspace` as the
+Runs as the unprivileged `climage` user (uid 1000, in the stock `users` group,
+gid 100 — there is no per-user group) with `/workspace` as the
 working directory. `tini` is PID 1 so long-lived agent sessions reap their children. The
 image is designed to be extended at runtime without root: `uv tool install` and
 `npm install -g` both work as the `climage` user, in interactive and login
@@ -158,7 +159,8 @@ agent permissions, so review a source before installing it.
 | Argument | Default | Purpose |
 | --- | --- | --- |
 | `NODE_VERSION` | `24` | Node.js major version (official image tag) |
-| `USERNAME` | `climage` | Runtime account name; the base image's `node` user is renamed to it, keeping uid/gid 1000 |
+| `USERNAME` | `climage` | Runtime account name; the base image's `node` user is renamed to it, keeping uid 1000 |
+| `USERGROUP` | `users` | Primary group (gid 100). A shared group, not a per-user one, so an arbitrary-uid run (`--user 5000:100`) keeps group access |
 | `DEBIAN_SUITE` | `bookworm` | Debian suite of the base image |
 | `PYTHON_VERSION` | `3.12` | CPython version installed via `uv python install` |
 | `UV_VERSION` | `0.12.13` | `uv`/`uvx` release copied from Astral's image |

@@ -172,15 +172,22 @@ ENV LANG=en_US.UTF-8 \
 
 # --- Runtime user -----------------------------------------------------------
 # Rename the base image's `node` account rather than creating a second user:
-# keeping uid/gid 1000 is what makes bind-mounted host files land with sane
+# keeping uid 1000 is what makes bind-mounted host files land with sane
 # ownership. Everything downstream refers to ${USERNAME}, never `node`.
+#
+# The primary group is Debian's stock `users` (gid 100), not a per-user group:
+# a shared gid is what lets a container run under an arbitrary uid
+# (`--user 5000:100`) and still reach group-readable paths. The base image's
+# now-memberless `node` group is deleted, which also frees gid 1000 — so a host
+# group of that gid maps to nothing here instead of silently matching.
 # DL3064 pattern-matches the name `USERNAME` as a possible credential; this is a
 # Unix account name with a literal value, so the rule is silenced here only.
 # hadolint ignore=DL3064
 ARG USERNAME=climage
-RUN groupmod -n "${USERNAME}" node \
-    && usermod -l "${USERNAME}" -d "/home/${USERNAME}" -m node \
-    && chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}"
+ARG USERGROUP=users
+RUN usermod -l "${USERNAME}" -d "/home/${USERNAME}" -m -g "${USERGROUP}" node \
+    && groupdel node \
+    && chown -R "${USERNAME}:${USERGROUP}" "/home/${USERNAME}"
 
 # --- Python toolchain: uv + ruff --------------------------------------------
 COPY --from=uv-bin /uv /uvx /usr/local/bin/
@@ -202,7 +209,7 @@ RUN uv python install "${PYTHON_VERSION}" \
     # bake tools into a layer; /opt/uv/bin stays on PATH so that is a one-line
     # ENV override with no PATH surgery.
     && mkdir -p /opt/uv/tools /opt/uv/bin \
-    && chown -R "${USERNAME}:${USERNAME}" /opt/uv \
+    && chown -R "${USERNAME}:${USERGROUP}" /opt/uv \
     && chmod -R a+rX /opt/uv
 
 # --- Agent CLIs -------------------------------------------------------------
@@ -259,7 +266,7 @@ RUN printf 'export PATH="%s/bin:%s:/opt/uv/bin:$PATH"\n' \
     && chmod 0644 /etc/profile.d/10-climage-path.sh \
     && mkdir -p "${NPM_CONFIG_PREFIX}" "${UV_TOOL_DIR}" "${UV_TOOL_BIN_DIR}" \
         "/home/${USERNAME}/.cache" /workspace \
-    && chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}" /workspace
+    && chown -R "${USERNAME}:${USERGROUP}" "/home/${USERNAME}" /workspace
 
 # Record which optional groups this image was built with, so the smoke test can
 # require exactly what is meant to be present and users can introspect a pull.

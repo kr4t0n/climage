@@ -196,14 +196,38 @@ it is unset but does not export it, so `echo $SHELL` in a bash session prints
 `/bin/bash` while every child process still sees nothing. Check with
 `printenv SHELL`, a separate process, as the smoke test does.
 
-**The runtime user is renamed, not created.** `groupmod`/`usermod` rename the
-base image's `node` account to `climage` in place, so it keeps uid/gid 1000 —
-the value that makes bind-mounted host files land with usable ownership for a
-typical single-user Linux host. Adding a second account would have left uid 1000
-occupied by `node` and pushed `climage` to 1001. Everything after that step
-refers to `${USERNAME}`; a hardcoded `node` or `/home/node` is a bug. Note that
-anything deriving from this image with `--user node` or a `/home/node` path
-breaks — the smoke test asserts the identity so the contract is explicit.
+**The runtime user is renamed, not created; its group is shared, not per-user.**
+`usermod` renames the base image's `node` account to `climage` in place, so it
+keeps uid 1000 — the value that makes bind-mounted host files land with usable
+ownership for a typical single-user Linux host. Adding a second account would
+have left uid 1000 occupied by `node` and pushed `climage` to 1001. Everything
+after that step refers to `${USERNAME}`; a hardcoded `node` or `/home/node` is a
+bug. Note that anything deriving from this image with `--user node` or a
+`/home/node` path breaks — the smoke test asserts the identity so the contract
+is explicit.
+
+The primary group is Debian's stock `users` (gid 100), set with `usermod -g`;
+there is no `climage` group, and the emptied `node` group is deleted. A shared
+gid is what makes an arbitrary-uid run (`--user 5000:100`, as orchestrators that
+allocate uids do) land in a group that still reaches group-readable paths, where
+a per-user gid 1000 would have left it in a group of one. Deleting `node` also
+frees gid 1000, so a host group of that gid no longer silently matches a
+container group through a bind mount.
+
+Two consequences. Every `chown` in the build must use `${USERGROUP}`, not
+`${USERNAME}:${USERNAME}` — miss one and files keep a gid that no longer exists
+in the image (`/opt/uv` alone is ~5.9k files); the smoke test greps for exactly
+that. And files the container creates in a bind mount now arrive group-owned by
+gid 100, so host tooling that relies on the *group* of written files — a shared
+group-writable checkout, a CI runner checking group bits — sees `users` instead
+of the host user's own group. Ownership by uid is unchanged, which is what the
+common single-user case actually depends on.
+
+Group *write* access is a separate question and deliberately not granted: `$HOME`
+and `/workspace` stay `0755`, so an arbitrary uid can read them but not write.
+Making the image writable for uid-allocating orchestrators means `0775` plus
+setgid on those directories — a larger change that widens write access for every
+deployment, so it is left to whoever needs it.
 
 **Agent state spans three top-level `$HOME` entries.** Claude Code uses
 `~/.claude/` plus a sibling `~/.claude.json`; Codex uses `~/.codex/`; the
