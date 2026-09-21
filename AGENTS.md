@@ -309,11 +309,23 @@ blocks forever; scripts relying on that exit must pass an explicit command. The
 smoke test pins both branches of the dispatch (parks on `/dev/null`, runs a piped
 script), so a regression fails CI rather than a deployment.
 
-**Size levers, measured.** The image is ~2.0 GB unpacked (`docker image
-inspect` reports the *compressed* size, roughly a third of that — do not confuse
-the two). The breakdown: agent CLIs ~612 MB of native binaries, ffmpeg's
-dependency tree 364 MB, the build-essential chain 231 MB, the base image
-~230 MB, uv's CPython 123 MB. Only the group flags move the needle; trimming
+**Size levers, measured.** `docker image inspect --format '{{.Size}}'` — what
+the CI size step runs — reports the *uncompressed* on-disk total. This file
+previously claimed the opposite, that it reported the compressed size and the
+real figure was three times larger; that was wrong, and dividing by three to
+"correct" it understates the image badly. The compressed number in the README's
+variants table is the registry figure, and it comes from Docker Hub, not from
+`inspect`. The check that settles it: CI reports 1.9 GB for the base build,
+against a README that lists 2.0 GB uncompressed and 698 MB compressed.
+
+Measured on amd64 in CI, the three variants are 1.3 GB (`slim`), 1.9 GB
+(`base`) and 2.7 GB (`full`); arm64 runs 0.1–0.2 GB smaller across the board.
+The breakdown: the Go and Rust toolchains account for nearly all of the 0.8 GB
+between `base` and `full` (argus and the browser libraries were ~30 MB of it
+before they were added), of which Go's `/usr/local/go` is 282 MB, leaving Rust
+the larger half. Then agent CLIs ~612 MB of native binaries, ffmpeg's dependency
+tree 364 MB, the build-essential chain 231 MB, the base image ~230 MB, uv's
+CPython 123 MB. Only the group flags move the needle; trimming
 individual utilities does not. `python3-dev`/`python3-venv` were dropped as
 redundant — `python3` resolves to uv's interpreter, so C extensions build
 against uv's headers, not Debian's 3.11 ones.
