@@ -40,7 +40,7 @@ Three inputs converge on one final stage:
 | `scripts/entrypoint.sh` | Baked into the image. Warns on an unwritable workspace, sources an optional `CLIMAGE_INIT` hook, then `exec "$@"`. |
 | `scripts/climage-idle.sh` | Baked in as `/usr/local/bin/climage-idle`, the image's `CMD`. Dispatches on stdin: terminal → `bash`, pipe/file → `bash` reading it, neither → `sleep infinity`. |
 | `tests/smoke.sh` | **Not** baked in — bind-mounted at test time so the image stays free of test assets. Asserts the tool inventory. |
-| `Makefile` | The local equivalent of the CI jobs. Keep the two in sync. |
+| `Makefile` | The local equivalent of the CI jobs. Keep the two in sync, and keep version pins out of it — see the gotchas. |
 | `.github/workflows/ci.yml` | lint → build & test → publish by digest → manifest. |
 
 ## Key design decisions
@@ -140,6 +140,23 @@ handles literal tags in `FROM`; it does not reliably rewrite an `ARG` default
 consumed by an interpolated `FROM`. Treat the `UV_VERSION` and `RUFF_VERSION`
 defaults as manually maintained — check Astral's releases when touching the
 Python toolchain. The `node` base tag is likewise interpolated.
+
+**The `Makefile` must not keep its own copy of the version pins.** It used to
+default `UV_VERSION`/`RUFF_VERSION` itself and pass them as `--build-arg`
+unconditionally, which quietly drifted two releases behind the `Dockerfile` —
+`make build` and `make test` then validated an image CI never publishes. The
+pins now live only in the `Dockerfile`; the `Makefile` forwards a build arg only
+when one is set. Do not reintroduce a default there, for any arg.
+
+**Make inherits the environment, and the base image exports `NODE_VERSION`.**
+The official `node` image sets `ENV NODE_VERSION=24.21.0`, so running `make`
+*inside* a climage container hands that value to the build and pins it to the
+host container's Node patch release instead of the intended major. `?=` is not a
+defence — it only assigns when a variable is undefined, and an environment
+variable is defined. The `build_arg` function therefore tests `$(origin …)` and
+accepts only `command line` and `file` (the latter being `.env`, which is
+`-include`d). Any new build arg wired into the `Makefile` needs the same
+treatment; a bare `make -n build` inside the image is how to check it.
 
 **ghcr's manifest API is slow.** `docker manifest inspect ghcr.io/astral-sh/...`
 routinely takes 10-15s, so probing candidate tags under a short timeout reports

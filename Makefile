@@ -9,18 +9,22 @@ IMAGE_NAME         ?= climage
 IMAGE_TAG          ?= dev
 PLATFORMS          ?= linux/amd64,linux/arm64
 
-NODE_VERSION       ?= 24
-PYTHON_VERSION     ?= 3.12
-UV_VERSION         ?= 0.12.5
-RUFF_VERSION       ?= 0.16.4
+# Version pins deliberately have no default here: the Dockerfile's ARG defaults
+# are the single source of truth, and a second copy silently drifts out of date.
+# Each is forwarded only when deliberately set, so `make build UV_VERSION=0.12.5`
+# still works and a bare `make build` matches what CI publishes.
+VERSION_ARGS := NODE_VERSION PYTHON_VERSION UV_VERSION RUFF_VERSION
+
+# ...and "deliberately" means the command line or .env (included above, so its
+# values have origin `file`) — never the ambient environment. The official node
+# base image exports NODE_VERSION, so running make *inside* climage would
+# otherwise pin the build to the host container's Node patch release.
+# `origin` returns "command line" for an override; firstword avoids quoting it.
+build_arg = $(if $(filter file command,$(firstword $(origin $(1)))),--build-arg $(1)=$($(1)))
 
 IMAGE      := $(IMAGE_NAME):$(IMAGE_TAG)
 REMOTE     := $(DOCKERHUB_USERNAME)/$(IMAGE_NAME):$(IMAGE_TAG)
-BUILD_ARGS := \
-	--build-arg NODE_VERSION=$(NODE_VERSION) \
-	--build-arg PYTHON_VERSION=$(PYTHON_VERSION) \
-	--build-arg UV_VERSION=$(UV_VERSION) \
-	--build-arg RUFF_VERSION=$(RUFF_VERSION)
+BUILD_ARGS := $(foreach v,$(VERSION_ARGS),$(call build_arg,$(v)))
 
 .DEFAULT_GOAL := help
 .PHONY: help build test run shell lint size push clean
