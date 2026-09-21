@@ -108,15 +108,15 @@ something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
-| `latest` | everything in the table above except the Go and Rust toolchains | 1.9 GB | 698 MB |
-| `slim` | no media or build-tool packages | 1.3 GB | 463 MB |
-| `full` | `latest` plus the Go and Rust toolchains, first-party tooling (`argus-sidecar`, `argus-bg`) and the headless-browser libraries | 2.7 GB | pending first publish |
+| `latest` | everything in the table above except the Go and Rust toolchains | 1.9 GB | 709 MB |
+| `slim` | no media or build-tool packages | 1.3 GB | 474 MB |
+| `full` | `latest` plus the Go and Rust toolchains, first-party tooling (`argus-sidecar`, `argus-bg`) and the headless-browser libraries | 2.7 GB | 998 MB |
 
-Uncompressed figures are the amd64 builds as measured by the size step of every
-CI run; arm64 is 0.1–0.2 GB smaller across the board. The Go and Rust toolchains
-account for nearly all of the 0.8 GB separating `full` from `latest`, so pull
-`latest` unless you need them. The compressed figure for `full` will be
-available once that variant has published from `main`.
+Both columns are amd64: uncompressed as the CI size step measures it, compressed
+as Docker Hub reports the pushed image. arm64 runs slightly smaller in both.
+The Go and Rust toolchains account for nearly all of the 0.8 GB (289 MB
+compressed) separating `full` from `latest`, so pull `latest` unless you need
+them.
 
 ```bash
 docker pull kr4t0n/climage:full
