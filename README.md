@@ -88,6 +88,19 @@ make push         # multi-arch build + push to Docker Hub (CI normally does this
 make help         # list all targets
 ```
 
+Every target takes `VARIANT`, which mirrors the CI matrix and defaults to
+`base`. Each variant builds to its own tag (`climage:dev`, `climage:dev-slim`,
+`climage:dev-full`), so one does not overwrite another:
+
+```bash
+make test VARIANT=full    # build the full variant and smoke-test it
+make size VARIANT=slim
+make test-all             # build and smoke-test all three, as CI does
+```
+
+Version pins come from the `Dockerfile` unless you override one explicitly:
+`make build GO_VERSION=1.26`.
+
 ### Image variants
 
 Three variants are published. `latest` is the one to use unless you need
@@ -109,7 +122,8 @@ available once that variant has published from `main`.
 docker pull kr4t0n/climage:full
 ```
 
-Build any of them locally with the matching build args:
+Build any of them locally with `make build VARIANT=slim|full`, or with the
+matching build args directly:
 
 ```bash
 docker build --build-arg INSTALL_ARGUS=true --build-arg INSTALL_BROWSER=true \

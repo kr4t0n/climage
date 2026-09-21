@@ -45,7 +45,7 @@ Four inputs converge on one final stage:
 | `scripts/entrypoint.sh` | Baked into the image. Warns on an unwritable workspace, sources an optional `CLIMAGE_INIT` hook, then `exec "$@"`. |
 | `scripts/climage-idle.sh` | Baked in as `/usr/local/bin/climage-idle`, the image's `CMD`. Dispatches on stdin: terminal → `bash`, pipe/file → `bash` reading it, neither → `sleep infinity`. |
 | `tests/smoke.sh` | **Not** baked in — bind-mounted at test time so the image stays free of test assets. Asserts the tool inventory. |
-| `Makefile` | The local equivalent of the CI jobs. Keep the two in sync, and keep version pins out of it — see the gotchas. |
+| `Makefile` | The local equivalent of the CI jobs, including the variant matrix (`make test VARIANT=full`, `make test-all`). Keep the two in sync, and keep version pins out of it — see the gotchas. |
 | `.github/workflows/ci.yml` | lint → build & test → publish by digest → manifest. |
 
 ## Key design decisions
