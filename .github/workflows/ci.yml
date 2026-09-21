@@ -37,10 +37,10 @@ jobs:
 
   # Three variants x two architectures. `base` publishes as `latest`; `slim`
   # drops the heavy apt groups; `full` adds the first-party tooling on top of
-  # base, plus the headless-browser libraries. Every architecture builds and
-# smoke-tests on its own native runner:
-  # QEMU emulation of an arm64 apt layer costs tens of minutes, while a native
-  # arm runner is free for public repositories.
+  # base, plus the headless-browser libraries and the Go and Rust toolchains.
+  # Every architecture builds and smoke-tests on its own native runner: QEMU
+  # emulation of an arm64 apt layer costs tens of minutes, while a native arm
+  # runner is free for public repositories.
   build-test:
     name: Build & smoke test (${{ matrix.variant }}/${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -65,6 +65,8 @@ jobs:
             build_args: |
               INSTALL_ARGUS=true
               INSTALL_BROWSER=true
+              INSTALL_GO=true
+              INSTALL_RUST=true
     steps:
       - uses: actions/checkout@v4
 
@@ -121,6 +123,8 @@ jobs:
             build_args: |
               INSTALL_ARGUS=true
               INSTALL_BROWSER=true
+              INSTALL_GO=true
+              INSTALL_RUST=true
     steps:
       - uses: actions/checkout@v4
 

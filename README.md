@@ -18,6 +18,8 @@ it to Docker Hub. There is no application code.
 | --- | --- |
 | Runtimes | `node`, `npm`, `npx`, `python3` (Debian), uv-managed CPython |
 | Python toolchain | `uv`, `uvx`, `ruff` |
+| Go toolchain | `go`, `gofmt` — off by default, in the [`full`](#image-variants) variant |
+| Rust toolchain | `rustc`, `cargo`, `rustup`, `clippy`, `rustfmt` — off by default, in the [`full`](#image-variants) variant |
 | Search & text | `rg` (ripgrep), `fd`, `bat`, `jq`, `tree`, `file`, `less`, `diff`, `patch`, `moreutils` |
 | Media & documents | `ffmpeg`, `ffprobe`, `convert` (ImageMagick), `pdftotext` (poppler) |
 | VCS & network | `git`, `git-lfs`, `gh`, `ssh`, `curl`, `wget`, `rsync`, `dig`, `ping`, `nc`, `socat` |
@@ -86,6 +88,19 @@ make push         # multi-arch build + push to Docker Hub (CI normally does this
 make help         # list all targets
 ```
 
+Every target takes `VARIANT`, which mirrors the CI matrix and defaults to
+`base`. Each variant builds to its own tag (`climage:dev`, `climage:dev-slim`,
+`climage:dev-full`), so one does not overwrite another:
+
+```bash
+make test VARIANT=full    # build the full variant and smoke-test it
+make size VARIANT=slim
+make test-all             # build and smoke-test all three, as CI does
+```
+
+Version pins come from the `Dockerfile` unless you override one explicitly:
+`make build GO_VERSION=1.26`.
+
 ### Image variants
 
 Three variants are published. `latest` is the one to use unless you need
@@ -93,18 +108,26 @@ something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
-| `latest` | everything in the table above | 2.0 GB | 698 MB |
-| `slim` | no media or build-tool packages | 1.4 GB | 463 MB |
-| `full` | `latest` plus first-party tooling (`argus-sidecar`, `argus-bg`) and the headless-browser libraries | +30 MB | +14 MB |
+| `latest` | everything in the table above except the Go and Rust toolchains | 1.9 GB | 698 MB |
+| `slim` | no media or build-tool packages | 1.3 GB | 463 MB |
+| `full` | `latest` plus the Go and Rust toolchains, first-party tooling (`argus-sidecar`, `argus-bg`) and the headless-browser libraries | 2.7 GB | pending first publish |
+
+Uncompressed figures are the amd64 builds as measured by the size step of every
+CI run; arm64 is 0.1–0.2 GB smaller across the board. The Go and Rust toolchains
+account for nearly all of the 0.8 GB separating `full` from `latest`, so pull
+`latest` unless you need them. The compressed figure for `full` will be
+available once that variant has published from `main`.
 
 ```bash
 docker pull kr4t0n/climage:full
 ```
 
-Build any of them locally with the matching build args:
+Build any of them locally with `make build VARIANT=slim|full`, or with the
+matching build args directly:
 
 ```bash
-docker build --build-arg INSTALL_ARGUS=true --build-arg INSTALL_BROWSER=true -t climage:full .
+docker build --build-arg INSTALL_ARGUS=true --build-arg INSTALL_BROWSER=true \
+    --build-arg INSTALL_GO=true --build-arg INSTALL_RUST=true -t climage:full .
 docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false -t climage:slim .
 ```
 
@@ -172,6 +195,10 @@ agent permissions, so review a source before installing it.
 | `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
 | `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
 | `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |
+| `INSTALL_GO` | `false` | Go toolchain, copied from the official `golang` image; on in the `full` variant. Must be exactly `true` or `false` |
+| `GO_VERSION` | `1.27` | Go minor version (official image tag) |
+| `INSTALL_RUST` | `false` | Rust toolchain, copied from the official `rust` image; on in the `full` variant. Requires `INSTALL_BUILD_TOOLS=true` for a working linker. Must be exactly `true` or `false` |
+| `RUST_VERSION` | `1.98` | Rust version (official image tag) |
 | `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar` and `argus-bg`; on in the `full` variant |
 | `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in the `full` variant — ~18 MB, since the media group already provides most of the chain |
 | `ARGUS_VERSION` | `0.3.5` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
@@ -186,6 +213,9 @@ agent permissions, so review a source before installing it.
 | `UV_CACHE_DIR` | `/home/climage/.cache/uv` | Mount a volume here to persist Python downloads |
 | `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` | `/home/climage/.uv/tools`, `/home/climage/.uv/bin` | Where `uv tool install` puts tools and their entry points — under `$HOME`, so a home volume persists them |
 | `NPM_CONFIG_PREFIX` | `/home/climage/.npm-global` | Lets the unprivileged user `npm install -g` at runtime |
+| `GOPATH` / `GOBIN` | `/home/climage/.go`, `/home/climage/.go/bin` | Where `go install` puts binaries, and the root of all Go state — under `$HOME`, so a home volume persists it |
+| `GOCACHE` / `GOENV` | `/home/climage/.go/cache`, `/home/climage/.go/env` | Moved off their `~/.cache` and `~/.config` defaults so everything Go writes lives in `~/.go`. `GOMODCACHE` follows `GOPATH` to `~/.go/pkg/mod` |
+| `CARGO_INSTALL_ROOT` | `/home/climage/.cargo` | Where `cargo install` puts binaries, for the same reason. The toolchain itself stays in `/opt/rust` |
 | `LANG` | `en_US.UTF-8` | Locale is generated in the image |
 | `SHELL` | `/bin/bash` | Shell that agents and tools spawn; without it they fall back to `/bin/sh` (dash) |
 

@@ -55,6 +55,9 @@ add_group "${INSTALL_CLAUDE_CODE:-true}" "claude --version"
 add_group "${INSTALL_CODEX:-true}" "codex --version"
 add_group "${INSTALL_SKILLS:-true}" "skills --version"
 add_group "${INSTALL_ARGUS:-false}" "argus-sidecar version" "argus-bg version"
+add_group "${INSTALL_GO:-false}" "go version" "gofmt -h"
+add_group "${INSTALL_RUST:-false}" "rustc --version" "cargo --version" \
+    "rustfmt --version" "clippy-driver --version"
 
 # The browser group installs shared libraries, not commands, so it is checked
 # against the linker cache rather than PATH. These are the names Chromium fails
@@ -127,6 +130,30 @@ if [[ "${UV_TOOL_DIR:-}" == "${HOME}/"* && "${tool_bin}" == "${HOME}/"* ]]; then
 else
     printf 'FAIL  %-14s %s must live under %s\n' "uv tool dir" "${UV_TOOL_DIR:-<unset>}" "${HOME}"
     failed=$((failed + 1))
+fi
+
+# Go and Rust repeat the uv split: the toolchain sits outside $HOME so a mounted
+# home cannot hide it, while what `go install` / `cargo install` produce must
+# land under $HOME to survive a restart. Assert the second half, so moving
+# either directory back out fails here instead of silently discarding an
+# agent's installs on the next pod restart.
+check_runtime_bindir() { # check_runtime_bindir <label> <dir>
+    local label=$1 dir=$2
+    if [[ -n "${dir}" && "${dir}" == "${HOME}/"* && -w "${dir}" \
+        && ":${PATH}:" == *":${dir}:"* ]]; then
+        printf 'ok    %-14s %s, writable and on PATH\n' "${label}" "${dir}"
+    else
+        printf 'FAIL  %-14s %s must be under %s, writable and on PATH\n' \
+            "${label}" "${dir:-<unset>}" "${HOME}"
+        failed=$((failed + 1))
+    fi
+}
+
+if [[ "${INSTALL_GO:-false}" == "true" ]]; then
+    check_runtime_bindir "go bin" "${GOBIN:-}"
+fi
+if [[ "${INSTALL_RUST:-false}" == "true" ]]; then
+    check_runtime_bindir "cargo bin" "${CARGO_INSTALL_ROOT:+${CARGO_INSTALL_ROOT}/bin}"
 fi
 
 # A login shell must keep the extra tool directories on PATH — /etc/profile
@@ -209,6 +236,36 @@ else
         printf 'FAIL  %-14s piped script returned %s, expected 7\n' "climage-idle" "${rc}"
         failed=$((failed + 1))
     fi
+fi
+
+# A version string proves nothing about whether a toolchain can produce a
+# binary. Rust in particular shells out to `cc` to link, so an image built with
+# INSTALL_RUST=true and INSTALL_BUILD_TOOLS=false compiles nothing at all while
+# every --version check above still passes.
+if [[ "${INSTALL_GO:-false}" == "true" ]]; then
+    tmp=$(mktemp -d)
+    printf 'package main\n\nfunc main() { println("ok") }\n' > "${tmp}/main.go"
+    if (cd "${tmp}" && go mod init smoke && go build -o smoke .) >/dev/null 2>&1 \
+        && "${tmp}/smoke" >/dev/null 2>&1; then
+        printf 'ok    %-14s builds and runs a binary\n' "go build"
+    else
+        printf 'FAIL  %-14s could not build a hello-world binary\n' "go build"
+        failed=$((failed + 1))
+    fi
+    rm -rf "${tmp}"
+fi
+
+if [[ "${INSTALL_RUST:-false}" == "true" ]]; then
+    tmp=$(mktemp -d)
+    printf 'fn main() { println!("ok"); }\n' > "${tmp}/hello.rs"
+    if rustc "${tmp}/hello.rs" -o "${tmp}/hello" >/dev/null 2>&1 \
+        && "${tmp}/hello" >/dev/null 2>&1; then
+        printf 'ok    %-14s compiles and links a binary\n' "rustc"
+    else
+        printf 'FAIL  %-14s could not link a binary; is a C compiler present?\n' "rustc"
+        failed=$((failed + 1))
+    fi
+    rm -rf "${tmp}"
 fi
 
 if [[ "${INSTALL_BROWSER:-false}" == "true" ]]; then
