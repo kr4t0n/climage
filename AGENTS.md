@@ -16,11 +16,13 @@ document it, or ship it.
 ```
 ghcr.io/astral-sh/uv:${UV_VERSION}      ─┐  (binary-only stages)
 ghcr.io/astral-sh/ruff:${RUFF_VERSION}  ─┤
+golang:${GO_VERSION}-${DEBIAN_SUITE}    ─┤  (conditional stages)
+rust:${RUST_VERSION}-${DEBIAN_SUITE}    ─┤
                                          ├─> node:${NODE_VERSION}-${DEBIAN_SUITE}-slim
-apt layer (agent tooling)               ─┘        └─> USER node, WORKDIR /workspace
+apt layer (agent tooling)               ─┘        └─> USER climage, WORKDIR /workspace
 ```
 
-Three inputs converge on one final stage:
+Four inputs converge on one final stage:
 
 - **Base image** — the official Node.js slim image. It provides the JS runtime,
   npm, and a pre-existing unprivileged `node` user at uid/gid 1000, which the
@@ -29,6 +31,9 @@ Three inputs converge on one final stage:
   distribution images rather than installed with a `curl | sh` script. The
   binaries are static, the version is pinned by tag, and the layers cache
   independently of the apt layer.
+- **Language stages** — the official `golang` and `rust` images, copied from
+  rather than installed, and selected by a stage alias so a build that does not
+  want them never pulls them. Off by default; the `full` variant enables both.
 - **apt layer** — Debian packages for search, media, documents, VCS, build, and
   shell tooling, plus the GitHub CLI from its own apt repository.
 
@@ -66,10 +71,30 @@ should follow the same shape.
 
 **Three variants, and `base` is the one that publishes as `latest`.** The ladder
 is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus
-first-party tooling). The CI matrix name for the default variant is `base`, not
+first-party tooling, the headless-browser libraries, and the Go and Rust
+toolchains — the languages dominate its size). The CI matrix name for the default variant is `base`, not
 `full`, because `full` is now a published tag meaning "everything, including
 argus". Only the tag names are a public contract; the matrix names are internal
 and appear in cache scopes and digest artifact names.
+
+**Optional `COPY --from` needs a conditional stage, not a conditional `RUN`.**
+The apt groups are optional because a shell `if` can wrap `apt-get`. `COPY` has
+no such escape: it cannot be made conditional, and copying the Go and Rust
+toolchains unconditionally would cost their full size in the layer even when
+disabled. The Dockerfile therefore selects the *stage*:
+
+```dockerfile
+FROM golang:${GO_VERSION}-${DEBIAN_SUITE} AS go-true
+FROM toolchain-absent AS go-false
+FROM go-${INSTALL_GO} AS go-src
+```
+
+BuildKit only builds stages the target actually references, so `INSTALL_GO=false`
+never pulls the golang image at all. `toolchain-absent` supplies empty
+directories at the same paths so the `COPY` always has a source; it derives from
+the node base, which is pulled anyway, so the disabled arm is free. The flags
+must be literally `true` or `false` — anything else fails the build with an
+unresolvable stage name, which is deliberate.
 
 **Interpreters live in `/opt/uv`; uv tools live in `$HOME`.** The split is
 deliberate and the two halves answer opposite questions. Interpreters are large,
@@ -81,6 +106,22 @@ volume — so `UV_TOOL_DIR`/`UV_TOOL_BIN_DIR` point into `/home/climage/.uv`.
 `/opt/uv` stays `chown`ed to the runtime user and `/opt/uv/bin` stays on `PATH`,
 so a derived image that wants tools in a layer instead of on a volume overrides
 the two vars and needs no `PATH` change.
+
+Go and Rust follow the same rule, and it is the rule to apply to any language
+added later. Toolchain outside `$HOME` (`/usr/local/go`, `/opt/rust`), runtime
+installs under it (`GOBIN=~/.go/bin`, `CARGO_INSTALL_ROOT=~/.cargo`), with the
+`$HOME` directories ahead on `PATH`. The smoke test asserts the second half for
+each language, because losing it is invisible until a pod restarts.
+
+**All Go state is consolidated under `~/.go`.** Go's defaults spread it across
+three places — `~/go` for `GOPATH`, `~/.cache/go-build` for the build cache and
+`~/.config/go` for the env file. Since the deployment mounts a volume at
+`/home/climage`, and the module and build caches are the two things that grow
+without bound, they are worth having in one prunable directory rather than
+three: `GOPATH`, `GOBIN`, `GOCACHE` and `GOENV` are all set explicitly, and
+`GOMODCACHE` follows `GOPATH` for free. The deliberate trade-off is the break
+from the near-universal `~/go` convention, so code that hardcodes `$HOME/go`
+rather than reading `go env GOPATH` will not find anything.
 
 **Runtime-writable global npm prefix.** `NPM_CONFIG_PREFIX=/home/climage/.npm-global`
 is on `PATH` ahead of `/usr/local/bin`, so an agent can `npm install -g` more
@@ -310,6 +351,60 @@ over between variants.
 `libatk-bridge2.0-0` and `libatspi2.0-0` become `…t64` under the 64-bit `time_t`
 transition; `libxcomposite1` and `libxdamage1` keep their names. Bumping
 `DEBIAN_SUITE` to trixie breaks this group until those three are renamed.
+
+**Rust cannot link without `INSTALL_BUILD_TOOLS`.** `rustc` shells out to `cc`
+for the link step, so `INSTALL_RUST=true INSTALL_BUILD_TOOLS=false` yields a
+Rust that compiles nothing while `rustc --version` still answers happily. Same
+shape as the browser/media coupling. The smoke test compiles and runs a
+hello-world rather than trusting the version string, which is the only way this
+failure becomes legible instead of an opaque error inside someone's `cargo
+build`. Go has no such dependency until a project enables cgo.
+
+**`cargo` is a rustup shim, so `CARGO_HOME` must stay out of `$HOME`.** The
+instinct is to put `CARGO_HOME` on the home volume next to `~/.uv` and
+`~/.npm-global`, but `rustc`, `cargo` and `rustfmt` are rustup proxy binaries
+living in `$CARGO_HOME/bin` — a volume mounted at `/home/climage` would hide the
+commands themselves, not just the cache. `CARGO_HOME` and `RUSTUP_HOME` are
+therefore in `/opt/rust`, and `CARGO_INSTALL_ROOT` (which is only where
+`cargo install` writes) is the part that lives under `$HOME`. The consequence to
+accept: cargo's registry cache is in `/opt/rust/cargo` and is *not* persisted by
+a home volume.
+
+**The official rust image ships neither clippy nor rustfmt.** It installs with
+`--profile minimal`. Both are added with `rustup component add` after the copy,
+followed by a `chown` so the runtime user can add more later. If a future bump
+appears to lose them, check whether the upstream profile changed.
+
+**The Go module cache is read-only, and one Go directory refuses to move.**
+Two quirks of `~/.go` worth knowing before debugging either. Go writes the
+module cache mode `0444`/`0555`, so `rm -rf ~/.go/pkg/mod` fails with a wall of
+permission errors — `go clean -modcache` is the supported way to reclaim that
+space, which matters because it grows without bound on a mounted home volume.
+And `GOTELEMETRYDIR` is a *non-settable* go env value derived from
+`os.UserConfigDir()`, so a few KB of local-only telemetry counters stay at
+`~/.config/go/telemetry` no matter what the other four variables say. Short of
+overriding `XDG_CONFIG_HOME` image-wide, which would move every other program's
+config too, that one cannot be consolidated. It is on the volume regardless.
+
+**Go's `GOTOOLCHAIN` default can override the pinned version.** `GOTOOLCHAIN` is
+deliberately left at its default (`auto`), so a project whose `go.mod` requires a
+newer Go than `GO_VERSION` downloads that toolchain into `GOPATH` at build time
+rather than failing. That is the right behaviour for an agent that builds
+arbitrary repositories, but it does mean `GO_VERSION` is a floor rather than a
+guarantee — unlike `PYTHON_VERSION`, which is exactly what runs. Set
+`GOTOOLCHAIN=local` at runtime if a deployment needs the pin to be strict.
+
+**Debian's `golang` and `rustc` packages are far too old to use.** bookworm ships
+Go 1.19 and Rust 1.63. That is why these two toolchains come from official
+images rather than the apt layer, despite apt being the pattern for every other
+group. Do not "simplify" them into the package list.
+
+**Dependabot does not track the language images either.** `FROM
+golang:${GO_VERSION}-...` is interpolated, so the same limitation as
+`UV_VERSION`/`RUFF_VERSION` applies: treat `GO_VERSION` and `RUST_VERSION` as
+manually maintained. `https://go.dev/VERSION?m=text` and
+`https://static.rust-lang.org/dist/channel-rust-stable.toml` both answer
+immediately and are the quickest way to check current stable.
 
 **Host uid mismatch on bind mounts.** The image runs as uid 1000. On a host
 where the user is not 1000, files written into a mounted `/workspace` land with

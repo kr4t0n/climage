@@ -18,6 +18,8 @@ it to Docker Hub. There is no application code.
 | --- | --- |
 | Runtimes | `node`, `npm`, `npx`, `python3` (Debian), uv-managed CPython |
 | Python toolchain | `uv`, `uvx`, `ruff` |
+| Go toolchain | `go`, `gofmt` — off by default, in the [`full`](#image-variants) variant |
+| Rust toolchain | `rustc`, `cargo`, `rustup`, `clippy`, `rustfmt` — off by default, in the [`full`](#image-variants) variant |
 | Search & text | `rg` (ripgrep), `fd`, `bat`, `jq`, `tree`, `file`, `less`, `diff`, `patch`, `moreutils` |
 | Media & documents | `ffmpeg`, `ffprobe`, `convert` (ImageMagick), `pdftotext` (poppler) |
 | VCS & network | `git`, `git-lfs`, `gh`, `ssh`, `curl`, `wget`, `rsync`, `dig`, `ping`, `nc`, `socat` |
@@ -93,9 +95,13 @@ something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
-| `latest` | everything in the table above | 2.0 GB | 698 MB |
+| `latest` | everything in the table above except the Go and Rust toolchains | 2.0 GB | 698 MB |
 | `slim` | no media or build-tool packages | 1.4 GB | 463 MB |
-| `full` | `latest` plus first-party tooling (`argus-sidecar`, `argus-bg`) and the headless-browser libraries | +30 MB | +14 MB |
+| `full` | `latest` plus the Go and Rust toolchains, first-party tooling (`argus-sidecar`, `argus-bg`) and the headless-browser libraries | see below | see below |
+
+`full` is substantially larger than `latest` — the Go and Rust toolchains
+dominate it. The exact figures are reported by the size step of every CI run;
+this table will carry them once the variant has published once.
 
 ```bash
 docker pull kr4t0n/climage:full
@@ -104,7 +110,8 @@ docker pull kr4t0n/climage:full
 Build any of them locally with the matching build args:
 
 ```bash
-docker build --build-arg INSTALL_ARGUS=true --build-arg INSTALL_BROWSER=true -t climage:full .
+docker build --build-arg INSTALL_ARGUS=true --build-arg INSTALL_BROWSER=true \
+    --build-arg INSTALL_GO=true --build-arg INSTALL_RUST=true -t climage:full .
 docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false -t climage:slim .
 ```
 
@@ -172,6 +179,10 @@ agent permissions, so review a source before installing it.
 | `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
 | `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
 | `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |
+| `INSTALL_GO` | `false` | Go toolchain, copied from the official `golang` image; on in the `full` variant. Must be exactly `true` or `false` |
+| `GO_VERSION` | `1.27` | Go minor version (official image tag) |
+| `INSTALL_RUST` | `false` | Rust toolchain, copied from the official `rust` image; on in the `full` variant. Requires `INSTALL_BUILD_TOOLS=true` for a working linker. Must be exactly `true` or `false` |
+| `RUST_VERSION` | `1.98` | Rust version (official image tag) |
 | `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar` and `argus-bg`; on in the `full` variant |
 | `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in the `full` variant — ~18 MB, since the media group already provides most of the chain |
 | `ARGUS_VERSION` | `0.3.5` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
@@ -186,6 +197,9 @@ agent permissions, so review a source before installing it.
 | `UV_CACHE_DIR` | `/home/climage/.cache/uv` | Mount a volume here to persist Python downloads |
 | `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` | `/home/climage/.uv/tools`, `/home/climage/.uv/bin` | Where `uv tool install` puts tools and their entry points — under `$HOME`, so a home volume persists them |
 | `NPM_CONFIG_PREFIX` | `/home/climage/.npm-global` | Lets the unprivileged user `npm install -g` at runtime |
+| `GOPATH` / `GOBIN` | `/home/climage/.go`, `/home/climage/.go/bin` | Where `go install` puts binaries, and the root of all Go state — under `$HOME`, so a home volume persists it |
+| `GOCACHE` / `GOENV` | `/home/climage/.go/cache`, `/home/climage/.go/env` | Moved off their `~/.cache` and `~/.config` defaults so everything Go writes lives in `~/.go`. `GOMODCACHE` follows `GOPATH` to `~/.go/pkg/mod` |
+| `CARGO_INSTALL_ROOT` | `/home/climage/.cargo` | Where `cargo install` puts binaries, for the same reason. The toolchain itself stays in `/opt/rust` |
 | `LANG` | `en_US.UTF-8` | Locale is generated in the image |
 | `SHELL` | `/bin/bash` | Shell that agents and tools spawn; without it they fall back to `/bin/sh` (dash) |
 

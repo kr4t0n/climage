@@ -13,7 +13,8 @@ PLATFORMS          ?= linux/amd64,linux/arm64
 # are the single source of truth, and a second copy silently drifts out of date.
 # Each is forwarded only when deliberately set, so `make build UV_VERSION=0.12.5`
 # still works and a bare `make build` matches what CI publishes.
-VERSION_ARGS := NODE_VERSION PYTHON_VERSION UV_VERSION RUFF_VERSION
+VERSION_ARGS := NODE_VERSION PYTHON_VERSION UV_VERSION RUFF_VERSION \
+                GO_VERSION RUST_VERSION
 
 # ...and "deliberately" means the command line or .env (included above, so its
 # values have origin `file`) — never the ambient environment. The official node
