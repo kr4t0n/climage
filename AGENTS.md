@@ -443,6 +443,15 @@ would point bare `latest` at whichever of them published last on a release and
 clobber the base build. Deleting either line is a silent, hard-to-notice
 regression.
 
+**A `v0.x` release must not publish a bare `0` tag.** `type=semver,pattern={{major}}`
+emits the major on its own, and for a 0.x version that would be `0` — a name
+implying a stable line where semver promises the opposite, and one that every
+later 0.x release would move. The three `{{major}}` rules are therefore guarded
+with `enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}`, as
+docker/metadata-action's own docs recommend. The guard becomes inert at 1.0.0
+and can be dropped then; until then a 0.x release publishes `X.Y.Z` and `X.Y`
+only.
+
 **There is no `edge` tag, deliberately.** `edge` distinguishes "newest main
 build" from "newest release" only when `latest` tracks releases exclusively.
 This pipeline sets `latest` on `main` pushes as well, so `edge` was a duplicate
