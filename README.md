@@ -122,6 +122,11 @@ them.
 docker pull kr4t0n/climage:full
 ```
 
+`latest`, `slim` and `full` follow `main` and move with every push. A release
+also publishes version tags — `0.1.0` and `0.1`, plus the `-slim` and `-full`
+suffixed equivalents — and every build is addressable by a short-SHA tag. Pin a
+version tag when you need the base image to stay put.
+
 Build any of them locally with `make build VARIANT=slim|full`, or with the
 matching build args directly:
 
@@ -202,7 +207,7 @@ agent permissions, so review a source before installing it.
 | `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar`; on in the `full` variant |
 | `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in the `full` variant — ~18 MB, since the media group already provides most of the chain |
 | `ARGUS_VERSION` | `0.3.6` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
-| `SKILLS_VERSION` | `1.5.26` | Exact [skills](https://github.com/vercel-labs/skills) version |
+| `SKILLS_VERSION` | `1.7.0` | Exact [skills](https://github.com/vercel-labs/skills) version |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
 
 ### Runtime environment variables

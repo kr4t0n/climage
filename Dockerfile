@@ -79,7 +79,7 @@ ARG CLAUDE_CODE_VERSION=2.1.278
 ARG INSTALL_CODEX=true
 ARG CODEX_VERSION=0.155.1
 ARG INSTALL_SKILLS=true
-ARG SKILLS_VERSION=1.5.26
+ARG SKILLS_VERSION=1.7.0
 # Heavyweight package groups, measured: media pulls 172 packages / ~409 MB
 # (ffmpeg alone drags in LLVM, mesa GL drivers and a speech synthesiser), build
 # tools another ~231 MB. Both default on; turn either off for a slim variant.
