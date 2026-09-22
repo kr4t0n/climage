@@ -321,9 +321,12 @@ variants table is the registry figure, and it comes from Docker Hub, not from
 against a README that lists 2.0 GB uncompressed and 698 MB compressed.
 
 Measured on amd64 in CI, the three variants are 1.3 GB (`slim`), 1.9 GB
-(`base`) and 2.7 GB (`full`); arm64 runs 0.1–0.2 GB smaller across the board.
-The breakdown: the Go and Rust toolchains account for nearly all of the 0.8 GB
-between `base` and `full` (argus and the browser libraries were ~30 MB of it
+(`base`) and 2.8 GB (`full`); arm64 runs 0.1–0.2 GB smaller across the board.
+Refreshing the compressed column has its own trap: Docker Hub's tag API reports
+`full_size` for one architecture only — arm64, the smaller — so read
+`.images[]` and pick `amd64` explicitly, or the table understates the image by
+tens of megabytes. The breakdown: the Go and Rust toolchains account for nearly
+all of the 0.9 GB between `base` and `full` (argus and the browser libraries were ~30 MB of it
 before they were added), of which Go's `/usr/local/go` is 282 MB, leaving Rust
 the larger half. Then agent CLIs ~612 MB of native binaries, ffmpeg's dependency
 tree 364 MB, the build-essential chain 231 MB, the base image ~230 MB, uv's

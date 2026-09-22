@@ -108,13 +108,13 @@ something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
-| `latest` | everything in the table above except the Go and Rust toolchains | 1.9 GB | 709 MB |
-| `slim` | no media or build-tool packages | 1.3 GB | 474 MB |
-| `full` | `latest` plus the Go and Rust toolchains, first-party tooling (`argus-sidecar`) and the headless-browser libraries | 2.7 GB | 998 MB |
+| `latest` | everything in the table above except the Go and Rust toolchains | 1.9 GB | 723 MB |
+| `slim` | no media or build-tool packages | 1.3 GB | 488 MB |
+| `full` | `latest` plus the Go and Rust toolchains, first-party tooling (`argus-sidecar`) and the headless-browser libraries | 2.8 GB | 1011 MB |
 
 Both columns are amd64: uncompressed as the CI size step measures it, compressed
 as Docker Hub reports the pushed image. arm64 runs slightly smaller in both.
-The Go and Rust toolchains account for nearly all of the 0.8 GB (289 MB
+The Go and Rust toolchains account for nearly all of the 0.9 GB (288 MB
 compressed) separating `full` from `latest`, so pull `latest` unless you need
 them.
 
