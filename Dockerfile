@@ -75,9 +75,9 @@ ARG PYTHON_VERSION=3.12
 # produce different images. Both CLIs track their npm `latest`; Claude Code also
 # publishes a slower `stable` tag, which this image deliberately does not use.
 ARG INSTALL_CLAUDE_CODE=true
-ARG CLAUDE_CODE_VERSION=2.1.274
+ARG CLAUDE_CODE_VERSION=2.1.278
 ARG INSTALL_CODEX=true
-ARG CODEX_VERSION=0.154.0
+ARG CODEX_VERSION=0.155.1
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.5.26
 # Heavyweight package groups, measured: media pulls 172 packages / ~409 MB
@@ -94,7 +94,7 @@ ARG INSTALL_BROWSER=false
 # First-party tooling, off by default — the `full` image variant turns it on.
 # Pinned to an exact release for the same reason the agent CLIs are.
 ARG INSTALL_ARGUS=false
-ARG ARGUS_VERSION=0.3.5
+ARG ARGUS_VERSION=0.3.6
 # Re-declared without a value from the global block before the first FROM: ARG
 # scope restarts at every FROM, and the language blocks below need to read them.
 ARG INSTALL_GO
@@ -326,22 +326,22 @@ RUN if [ "${INSTALL_CLAUDE_CODE}" = "true" ]; then \
 # newest release at build time — and its scan does not exclude pre-releases, so
 # an unpinned build can land on an RC — and the script itself is served from a
 # mutable branch. This performs the same SHA-256 check against a pinned tag.
+# One binary since 0.3.6, which dropped argus-bg along with the background-task
+# progress extension it served.
 ARG TARGETARCH
 RUN if [ "${INSTALL_ARGUS}" = "true" ]; then \
         base="https://github.com/kr4t0n/argus/releases/download/argus-sidecar-v${ARGUS_VERSION}" \
+        && asset="argus-sidecar-linux-${TARGETARCH}" \
         && tmp="$(mktemp -d)" \
         && curl -fsSL "${base}/SHASUMS256.txt" -o "${tmp}/SHASUMS256.txt" \
-        && for bin in argus-sidecar argus-bg; do \
-            asset="${bin}-linux-${TARGETARCH}" \
-            && curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}" \
-            # awk rewrites the manifest's bare filename to the temp path, and
-            # emits nothing at all if the asset is not listed — sha256sum then
-            # fails on an empty check list, so an unlisted or renamed asset
-            # cannot slip through unverified.
-            && awk -v a="${asset}" -v d="${tmp}" '$2 == a { print $1 "  " d "/" a }' \
-                 "${tmp}/SHASUMS256.txt" | sha256sum -c - \
-            && install -m 0755 "${tmp}/${asset}" "/usr/local/bin/${bin}"; \
-        done \
+        && curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}" \
+        # awk rewrites the manifest's bare filename to the temp path, and emits
+        # nothing at all if the asset is not listed — sha256sum then fails on an
+        # empty check list, so an unlisted or renamed asset cannot slip through
+        # unverified.
+        && awk -v a="${asset}" -v d="${tmp}" '$2 == a { print $1 "  " d "/" a }' \
+             "${tmp}/SHASUMS256.txt" | sha256sum -c - \
+        && install -m 0755 "${tmp}/${asset}" /usr/local/bin/argus-sidecar \
         && rm -rf "${tmp}"; \
     fi
 

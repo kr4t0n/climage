@@ -66,8 +66,10 @@ but by pinned release tag, verified against the release's own `SHASUMS256.txt`,
 rather than through its `curl … | sh` installer. The installer does check the
 same hashes; what it does not do is pin, and its "newest release" scan does not
 filter pre-releases, so an unpinned build could quietly ship an RC. The script
-itself is also served from a mutable branch. Adding a second first-party tool
-should follow the same shape.
+itself is also served from a mutable branch. The set of binaries a release ships
+is not stable either — 0.3.6 dropped `argus-bg` — so a bump means checking the
+release's asset list, not just the tag: a stale name 404s the build. Adding a
+second first-party tool should follow the same shape.
 
 **Three variants, and `base` is the one that publishes as `latest`.** The ladder
 is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus
@@ -235,7 +237,7 @@ explicitly. This is done with plain symlinks rather than `uv python install
 
 **Both agent CLIs track npm `latest`, by choice.** `@anthropic-ai/claude-code`
 publishes `stable`, `latest`, and `next`, where `latest` equals `next` and runs
-ahead of `stable` — often by several weeks (2.1.267 vs 2.1.274 at the time of
+ahead of `stable` — often by several weeks (2.1.267 vs 2.1.278 at the time of
 writing). `@openai/codex` publishes no `stable` tag at all; its non-`latest`
 tags are alpha/beta and platform-specific builds. Rather than have the two CLIs
 follow different release trains, both pins follow `latest`. The trade-off is

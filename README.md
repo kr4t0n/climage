@@ -28,7 +28,7 @@ it to Docker Hub. There is no application code.
 | Shell & process | `bash`, `tmux`, `vim.tiny`, `htop`, `procps`, `shellcheck`, `tini` |
 | Archives | `unzip`, `zip`, `xz`, `bzip2`, `tar`, `gzip` |
 | Agent CLIs | `claude` (Claude Code), `codex` (OpenAI Codex), `skills` (open agent-skills manager) — all optional, on by default |
-| First-party | `argus-sidecar`, `argus-bg` — off by default, in the [`full`](#image-variants) variant |
+| First-party | `argus-sidecar` — off by default, in the [`full`](#image-variants) variant |
 
 `python` and `python3` resolve to the uv-managed CPython (3.12 by default), not
 Debian's system interpreter — the pinned version is what runs, whichever name an
@@ -110,7 +110,7 @@ something it does not have.
 | --- | --- | --- | --- |
 | `latest` | everything in the table above except the Go and Rust toolchains | 1.9 GB | 709 MB |
 | `slim` | no media or build-tool packages | 1.3 GB | 474 MB |
-| `full` | `latest` plus the Go and Rust toolchains, first-party tooling (`argus-sidecar`, `argus-bg`) and the headless-browser libraries | 2.7 GB | 998 MB |
+| `full` | `latest` plus the Go and Rust toolchains, first-party tooling (`argus-sidecar`) and the headless-browser libraries | 2.7 GB | 998 MB |
 
 Both columns are amd64: uncompressed as the CI size step measures it, compressed
 as Docker Hub reports the pushed image. arm64 runs slightly smaller in both.
@@ -189,9 +189,9 @@ agent permissions, so review a source before installing it.
 | `UV_VERSION` | `0.12.13` | `uv`/`uvx` release copied from Astral's image |
 | `RUFF_VERSION` | `0.16.7` | `ruff` release copied from Astral's image |
 | `INSTALL_CLAUDE_CODE` | `true` | Set `false` to omit the Claude Code CLI |
-| `CLAUDE_CODE_VERSION` | `2.1.274` | Exact Claude Code version (npm `latest`) |
+| `CLAUDE_CODE_VERSION` | `2.1.278` | Exact Claude Code version (npm `latest`) |
 | `INSTALL_CODEX` | `true` | Set `false` to omit the Codex CLI |
-| `CODEX_VERSION` | `0.154.0` | Exact Codex CLI version (npm `latest`) |
+| `CODEX_VERSION` | `0.155.1` | Exact Codex CLI version (npm `latest`) |
 | `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
 | `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
 | `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |
@@ -199,9 +199,9 @@ agent permissions, so review a source before installing it.
 | `GO_VERSION` | `1.27` | Go minor version (official image tag) |
 | `INSTALL_RUST` | `false` | Rust toolchain, copied from the official `rust` image; on in the `full` variant. Requires `INSTALL_BUILD_TOOLS=true` for a working linker. Must be exactly `true` or `false` |
 | `RUST_VERSION` | `1.98` | Rust version (official image tag) |
-| `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar` and `argus-bg`; on in the `full` variant |
+| `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar`; on in the `full` variant |
 | `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in the `full` variant — ~18 MB, since the media group already provides most of the chain |
-| `ARGUS_VERSION` | `0.3.5` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
+| `ARGUS_VERSION` | `0.3.6` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
 | `SKILLS_VERSION` | `1.5.26` | Exact [skills](https://github.com/vercel-labs/skills) version |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
 
