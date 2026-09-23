@@ -108,9 +108,9 @@ something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
-| `latest` | everything in the table above except the Go and Rust toolchains | 1.9 GB | 723 MB |
-| `slim` | no media or build-tool packages | 1.3 GB | 488 MB |
-| `full` | `latest` plus the Go and Rust toolchains, first-party tooling (`argus-sidecar`) and the headless-browser libraries | 2.8 GB | 1011 MB |
+| `latest` | everything in the table above except the Go and Rust toolchains | 1.9 GB | 730 MB |
+| `slim` | no media or build-tool packages | 1.3 GB | 495 MB |
+| `full` | `latest` plus the Go and Rust toolchains, first-party tooling (`argus-sidecar`) and the headless-browser libraries | 2.8 GB | 1018 MB |
 
 Both columns are amd64: uncompressed as the CI size step measures it, compressed
 as Docker Hub reports the pushed image. arm64 runs slightly smaller in both.
@@ -123,7 +123,7 @@ docker pull kr4t0n/climage:full
 ```
 
 `latest`, `slim` and `full` follow `main` and move with every push. A release
-also publishes version tags — `0.1.0` and `0.1`, plus the `-slim` and `-full`
+also publishes version tags — `0.1.1` and `0.1`, plus the `-slim` and `-full`
 suffixed equivalents — and every build is addressable by a short-SHA tag. Pin a
 version tag when you need the base image to stay put.
 
