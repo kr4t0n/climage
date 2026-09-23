@@ -256,12 +256,37 @@ from the volume, and `claude doctor` reported the update that put it there.
 matching how every other tool in the image is handled. Only the value `1`
 disables updates — `claude doctor` reports `0` and the empty string as enabled
 — so `0` is the documented opt-out, and the smoke test asserts the exact value.
-Codex and `skills` do not self-update and need no equivalent.
+`skills` has no update mechanism at all. Codex does, and it is not yet closed —
+see the next entry.
 
 The variable prevents new shadow copies; it does not remove one an earlier image
 already let in. On an existing volume, `which -a claude` shows whether one is
 there, and `npm uninstall -g @anthropic-ai/claude-code` (as the runtime user,
 which targets `~/.npm-global`) removes it.
+
+**Codex can shadow its pin the same way, behind a prompt instead of a timer.**
+The interactive TUI checks for a newer release on every launch
+(`check_for_update_on_startup`, default `true`) and offers *Update now* / *Not
+now* / *Don't remind*, with *Update now* pre-selected. Accepting it — one Enter —
+or running `codex update` executes `npm install -g @openai/codex`, which lands in
+`~/.npm-global` and shadows the image exactly as Claude Code's self-update did.
+`codex exec` and `codex app-server --stdio`, which is how argus drives Codex,
+never prompt. Separately, the app-server daemon installs builds from
+`install.sh` into `~/.codex/packages/` on a schedule with no prompt at all, but
+it only runs when started explicitly (`codex agents`, `codex app-server daemon
+start`, `codex remote-control`) or through the experimental `daemon_auto_start`
+feature, which ships disabled; its setting lives in a `settings.json` under
+`~/.codex`, beyond the image's reach. `codex doctor` reports the effective
+`startup update check`, the update action and the cached latest version, which
+is the quickest way to see what a given container would do.
+
+The prompt path has a ready fix that is deliberately not applied yet: write
+`check_for_update_on_startup = false` to `/etc/codex/config.toml`. Codex reads
+that file as a system layer below the user's `~/.codex/config.toml`, so it is a
+default a user can still override, and it sits outside `$HOME`, so a home
+volume cannot hide it. The key itself is verified — `codex doctor` flips to
+`false` under `-c check_for_update_on_startup=false` — but the `/etc` layer has
+only been read from source, not exercised in a built image.
 
 **`SHELL` is set with `ENV`, and checking it from bash lies.** Docker sets no
 `SHELL` of its own, and the `SHELL` Dockerfile directive only governs `RUN`
@@ -494,3 +519,6 @@ run; treat a step change as a regression to explain.
 - No vulnerability scanning. A Trivy or Grype job on the built image is the
   obvious next CI step.
 - Docker Hub's repository description is not synced from `README.md`.
+- Codex's startup update prompt is still on, so one accepted prompt re-creates
+  the shadowing that `DISABLE_AUTOUPDATER` closed for Claude Code. The fix is
+  ready — see the Codex entry under gotchas.
