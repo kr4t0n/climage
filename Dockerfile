@@ -75,9 +75,9 @@ ARG PYTHON_VERSION=3.12
 # produce different images. Both CLIs track their npm `latest`; Claude Code also
 # publishes a slower `stable` tag, which this image deliberately does not use.
 ARG INSTALL_CLAUDE_CODE=true
-ARG CLAUDE_CODE_VERSION=2.1.278
+ARG CLAUDE_CODE_VERSION=2.1.280
 ARG INSTALL_CODEX=true
-ARG CODEX_VERSION=0.155.1
+ARG CODEX_VERSION=0.156.0
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.7.0
 # Heavyweight package groups, measured: media pulls 172 packages / ~409 MB
