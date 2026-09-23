@@ -245,6 +245,24 @@ deliberate: newer features, less soak time. Check `npm view <pkg> dist-tags`
 before bumping, and if a Claude Code release ever regresses, `stable` is the
 fallback channel to pin to.
 
+**Claude Code's self-update defeats the pin, so the image turns it off.** Left
+alone, Claude Code updates itself with `npm install -g`, which honours
+`NPM_CONFIG_PREFIX` and so installs into `~/.npm-global` — on the home volume,
+and ahead of `/usr/local/bin` on `PATH`. From then on that copy shadows the
+image's, and because the volume outlives the container it keeps shadowing every
+later image too: a pod on v0.1.1, which ships 2.1.280, was found running 2.1.278
+from the volume, and `claude doctor` reported the update that put it there.
+`ENV DISABLE_AUTOUPDATER=1` makes `CLAUDE_CODE_VERSION` authoritative again,
+matching how every other tool in the image is handled. Only the value `1`
+disables updates — `claude doctor` reports `0` and the empty string as enabled
+— so `0` is the documented opt-out, and the smoke test asserts the exact value.
+Codex and `skills` do not self-update and need no equivalent.
+
+The variable prevents new shadow copies; it does not remove one an earlier image
+already let in. On an existing volume, `which -a claude` shows whether one is
+there, and `npm uninstall -g @anthropic-ai/claude-code` (as the runtime user,
+which targets `~/.npm-global`) removes it.
+
 **`SHELL` is set with `ENV`, and checking it from bash lies.** Docker sets no
 `SHELL` of its own, and the `SHELL` Dockerfile directive only governs `RUN`
 steps. Agents and tools read `$SHELL` to pick the shell they spawn, and without

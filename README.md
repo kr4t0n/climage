@@ -223,6 +223,7 @@ agent permissions, so review a source before installing it.
 | `CARGO_INSTALL_ROOT` | `/home/climage/.cargo` | Where `cargo install` puts binaries, for the same reason. The toolchain itself stays in `/opt/rust` |
 | `LANG` | `en_US.UTF-8` | Locale is generated in the image |
 | `SHELL` | `/bin/bash` | Shell that agents and tools spawn; without it they fall back to `/bin/sh` (dash) |
+| `DISABLE_AUTOUPDATER` | `1` | Stops Claude Code from updating itself, so the image's pinned version is the one that runs. Set `0` to re-enable; updates then land in `~/.npm-global` and take precedence over the image's copy |
 
 ### Publishing credentials
 

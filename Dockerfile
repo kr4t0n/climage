@@ -319,6 +319,12 @@ RUN if [ "${INSTALL_CLAUDE_CODE}" = "true" ]; then \
     fi \
     && npm cache clean --force
 
+# Claude Code updates itself by default with `npm install -g`, which the runtime
+# NPM_CONFIG_PREFIX below sends to the home volume — ahead on PATH, and surviving
+# every image upgrade. The pinned version then silently stops being the one that
+# runs. Only "1" disables it; opt back in with DISABLE_AUTOUPDATER=0.
+ENV DISABLE_AUTOUPDATER=1
+
 # --- First-party tooling ----------------------------------------------------
 # argus ships plain release binaries next to a SHASUMS256.txt manifest, so this
 # fetches and verifies them directly instead of piping the project's installer

@@ -177,6 +177,16 @@ else
     failed=$((failed + 1))
 fi
 
+# Without this, Claude Code's self-update installs into the home volume and
+# shadows the pinned CLI from then on. Only "1" disables it; "0" and "" do not.
+autoupdater_env=$(printenv DISABLE_AUTOUPDATER || true)
+if [[ "${autoupdater_env}" == "1" ]]; then
+    printf 'ok    %-14s exported as %s\n' "autoupdater" "DISABLE_AUTOUPDATER=1"
+else
+    printf 'FAIL  %-14s DISABLE_AUTOUPDATER is %s, expected 1\n' "autoupdater" "${autoupdater_env:-<unset>}"
+    failed=$((failed + 1))
+fi
+
 # The runtime identity is part of the image's contract: uid 1000 keeps
 # bind-mounted host files sanely owned, and $HOME must match the account.
 # the shared `users` gid (100) is what lets an arbitrary-uid run keep group access.
