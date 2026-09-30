@@ -18,8 +18,8 @@ it to Docker Hub. There is no application code.
 | --- | --- |
 | Runtimes | `node`, `npm`, `npx`, `python3` (Debian), uv-managed CPython |
 | Python toolchain | `uv`, `uvx`, `ruff` |
-| Go toolchain | `go`, `gofmt` — off by default, in the [`full`](#image-variants) variant |
-| Rust toolchain | `rustc`, `cargo`, `rustup`, `clippy`, `rustfmt` — off by default, in the [`full`](#image-variants) variant |
+| Go toolchain | `go`, `gofmt` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
+| Rust toolchain | `rustc`, `cargo`, `rustup`, `clippy`, `rustfmt` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
 | Search & text | `rg` (ripgrep), `fd`, `bat`, `jq`, `tree`, `file`, `less`, `diff`, `patch`, `moreutils` |
 | Media & documents | `ffmpeg`, `ffprobe`, `convert` (ImageMagick), `pdftotext` (poppler) |
 | VCS & network | `git`, `git-lfs`, `gh`, `ssh`, `curl`, `wget`, `rsync`, `dig`, `ping`, `nc`, `socat` |
@@ -28,7 +28,7 @@ it to Docker Hub. There is no application code.
 | Shell & process | `bash`, `tmux`, `vim.tiny`, `htop`, `procps`, `shellcheck`, `tini` |
 | Archives | `unzip`, `zip`, `xz`, `bzip2`, `tar`, `gzip` |
 | Agent CLIs | `claude` (Claude Code), `codex` (OpenAI Codex), `skills` (open agent-skills manager) — all optional, on by default |
-| First-party | `argus-sidecar` — off by default, in the [`full`](#image-variants) variant |
+| First-party | `argus-sidecar` — off by default, only in the [`full-argus`](#image-variants) variant |
 
 `python` and `python3` resolve to the uv-managed CPython (3.12 by default), not
 Debian's system interpreter — the pinned version is what runs, whichever name an
@@ -90,12 +90,12 @@ make help         # list all targets
 
 Every target takes `VARIANT`, which mirrors the CI matrix and defaults to
 `base`. Each variant builds to its own tag (`climage:dev`, `climage:dev-slim`,
-`climage:dev-full`), so one does not overwrite another:
+`climage:dev-full`, `climage:dev-full-argus`), so one does not overwrite another:
 
 ```bash
 make test VARIANT=full    # build the full variant and smoke-test it
 make size VARIANT=slim
-make test-all             # build and smoke-test all three, as CI does
+make test-all             # build and smoke-test all four, as CI does
 ```
 
 Version pins come from the `Dockerfile` unless you override one explicitly:
@@ -103,14 +103,15 @@ Version pins come from the `Dockerfile` unless you override one explicitly:
 
 ### Image variants
 
-Three variants are published. `latest` is the one to use unless you need
+Four variants are published. `latest` is the one to use unless you need
 something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
 | `latest` | everything in the table above except the Go and Rust toolchains | 1.9 GB | 730 MB |
 | `slim` | no media or build-tool packages | 1.3 GB | 495 MB |
-| `full` | `latest` plus the Go and Rust toolchains, first-party tooling (`argus-sidecar`) and the headless-browser libraries | 2.8 GB | 1018 MB |
+| `full` | `latest` plus the Go and Rust toolchains and the headless-browser libraries | — | — |
+| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 2.8 GB | 1018 MB |
 
 Both columns are amd64: uncompressed as the CI size step measures it, compressed
 as Docker Hub reports the pushed image. arm64 runs slightly smaller in both.
@@ -122,23 +123,26 @@ them.
 docker pull kr4t0n/climage:full
 ```
 
-`latest`, `slim` and `full` follow `main` and move with every push. A release
-also publishes version tags — `0.2.0` and `0.2`, plus the `-slim` and `-full`
-suffixed equivalents — and every build is addressable by a short-SHA tag. Pin a
-version tag when you need the base image to stay put.
+`latest`, `slim`, `full` and `full-argus` follow `main` and move with every
+push. A release also publishes version tags — `0.2.0` and `0.2`, plus the
+`-slim`, `-full` and `-full-argus` suffixed equivalents — and every build is
+addressable by a short-SHA tag. Pin a version tag when you need the base image
+to stay put.
 
-Build any of them locally with `make build VARIANT=slim|full`, or with the
-matching build args directly:
+Build any of them locally with `make build VARIANT=slim|full|full-argus`, or
+with the matching build args directly:
 
 ```bash
-docker build --build-arg INSTALL_ARGUS=true --build-arg INSTALL_BROWSER=true \
+docker build --build-arg INSTALL_BROWSER=true \
     --build-arg INSTALL_GO=true --build-arg INSTALL_RUST=true -t climage:full .
 docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false -t climage:slim .
 ```
 
+`full-argus` is the `full` command plus `--build-arg INSTALL_ARGUS=true`.
+
 ### Headless browsers
 
-The `full` variant ships the system libraries Chromium needs, so Playwright and
+Both `full` variants ship the system libraries Chromium needs, so Playwright and
 Puppeteer work as the unprivileged user with no `apt` and no root:
 
 ```bash
@@ -200,12 +204,12 @@ agent permissions, so review a source before installing it.
 | `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
 | `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
 | `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |
-| `INSTALL_GO` | `false` | Go toolchain, copied from the official `golang` image; on in the `full` variant. Must be exactly `true` or `false` |
+| `INSTALL_GO` | `false` | Go toolchain, copied from the official `golang` image; on in both `full` variants. Must be exactly `true` or `false` |
 | `GO_VERSION` | `1.27` | Go minor version (official image tag) |
-| `INSTALL_RUST` | `false` | Rust toolchain, copied from the official `rust` image; on in the `full` variant. Requires `INSTALL_BUILD_TOOLS=true` for a working linker. Must be exactly `true` or `false` |
+| `INSTALL_RUST` | `false` | Rust toolchain, copied from the official `rust` image; on in both `full` variants. Requires `INSTALL_BUILD_TOOLS=true` for a working linker. Must be exactly `true` or `false` |
 | `RUST_VERSION` | `1.98` | Rust version (official image tag) |
-| `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar`; on in the `full` variant |
-| `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in the `full` variant — ~18 MB, since the media group already provides most of the chain |
+| `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar`; on only in the `full-argus` variant |
+| `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in both `full` variants — ~18 MB, since the media group already provides most of the chain |
 | `ARGUS_VERSION` | `0.3.6` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
 | `SKILLS_VERSION` | `1.7.0` | Exact [skills](https://github.com/vercel-labs/skills) version |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |

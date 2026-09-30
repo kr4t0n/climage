@@ -33,7 +33,8 @@ Four inputs converge on one final stage:
   independently of the apt layer.
 - **Language stages** — the official `golang` and `rust` images, copied from
   rather than installed, and selected by a stage alias so a build that does not
-  want them never pulls them. Off by default; the `full` variant enables both.
+  want them never pulls them. Off by default; `full` and `full-argus` enable
+  both.
 - **apt layer** — Debian packages for search, media, documents, VCS, build, and
   shell tooling, plus the GitHub CLI from its own apt repository.
 
@@ -71,13 +72,17 @@ is not stable either — 0.3.6 dropped `argus-bg` — so a bump means checking t
 release's asset list, not just the tag: a stale name 404s the build. Adding a
 second first-party tool should follow the same shape.
 
-**Three variants, and `base` is the one that publishes as `latest`.** The ladder
-is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus
-first-party tooling, the headless-browser libraries, and the Go and Rust
-toolchains — the languages dominate its size). The CI matrix name for the default variant is `base`, not
-`full`, because `full` is now a published tag meaning "everything, including
-argus". Only the tag names are a public contract; the matrix names are internal
-and appear in cache scopes and digest artifact names.
+**Four variants, and `base` is the one that publishes as `latest`.** The ladder
+is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus the
+headless-browser libraries and the Go and Rust toolchains — the languages
+dominate its size) → `full-argus` (`full` plus first-party tooling). argus is
+the one component only argus deployments want, so it rides on its own tag rather
+than making every `full` consumer carry it; `full` therefore means "every
+general-purpose toolchain", and `full-argus` is the only image with
+`argus-sidecar`. The CI matrix name for the default variant is `base`, not
+`full`, because `full` is a published tag meaning something else. Only the tag
+names are a public contract; the matrix names are internal and appear in cache
+scopes and digest artifact names.
 
 **Optional `COPY --from` needs a conditional stage, not a conditional `RUN`.**
 The apt groups are optional because a shell `if` can wrap `apt-get`. `COPY` has
@@ -482,12 +487,12 @@ one GitHub Actions cache. Without `scope=${{ matrix.arch }}` on `cache-from` /
 `cache-to`, each architecture overwrites the other's layers every run and both
 lose their cache.
 
-**`latest` is the base build; `slim` and `full` are separate tags, not
-suffixes.** The manifest job runs once per variant with its own tag rules. Both
-non-default variants set `flavor: latest=false` — without it, `latest=auto`
-would point bare `latest` at whichever of them published last on a release and
-clobber the base build. Deleting either line is a silent, hard-to-notice
-regression.
+**`latest` is the base build; `slim`, `full` and `full-argus` are separate
+tags, not suffixes.** The manifest job runs once per variant with its own tag
+rules. All three non-default variants set `flavor: latest=false` — without it,
+`latest=auto` would point bare `latest` at whichever of them published last on a
+release and clobber the base build. Deleting any of those lines is a silent,
+hard-to-notice regression.
 
 **A `v0.x` release must not publish a bare `0` tag.** `type=semver,pattern={{major}}`
 emits the major on its own, and for a 0.x version that would be `0` — a name
@@ -509,6 +514,14 @@ image and uploads its digest as an artifact; the `manifest` job merges those
 digests into the real tags. This is what allows two independent runners to
 contribute to one multi-arch tag — do not "simplify" it into a single tagged
 push, which would leave the last runner's tag overwriting the other's.
+
+**The manifest job fetches digests by exact artifact name, because variant
+names nest.** Artifacts are named `digest-<variant>-<arch>`, and the obvious
+fetch — the glob `digest-<variant>-*` — matches `digest-full-argus-amd64` when
+the variant is `full`. The `full` tag would then be assembled from four images,
+two per architecture, with nothing in the build failing to say so. Each
+architecture is therefore downloaded by its exact name. Adding an architecture
+means adding a download step there as well as a matrix entry.
 
 **Image size is a real constraint.** `build-essential`, `ffmpeg`, and
 `imagemagick` dominate the footprint. The CI build reports the size on every

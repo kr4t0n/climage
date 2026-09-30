@@ -26,15 +26,17 @@ build_arg = $(if $(filter file command,$(firstword $(origin $(1)))),--build-arg 
 # Variant selection mirrors the CI matrix, so `make test VARIANT=full` checks
 # what CI checks. `base` is the one that publishes as `latest`, which is why it
 # carries no build args of its own.
-VARIANT ?= base
-ifeq ($(filter $(VARIANT),base slim full),)
-$(error VARIANT must be one of: base slim full (got '$(VARIANT)'))
+VARIANTS := base slim full full-argus
+VARIANT  ?= base
+ifeq ($(filter $(VARIANT),$(VARIANTS)),)
+$(error VARIANT must be one of: $(VARIANTS) (got '$(VARIANT)'))
 endif
 
 VARIANT_ARGS_base :=
 VARIANT_ARGS_slim := --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false
-VARIANT_ARGS_full := --build-arg INSTALL_ARGUS=true --build-arg INSTALL_BROWSER=true \
+VARIANT_ARGS_full := --build-arg INSTALL_BROWSER=true \
                      --build-arg INSTALL_GO=true --build-arg INSTALL_RUST=true
+VARIANT_ARGS_full-argus := $(VARIANT_ARGS_full) --build-arg INSTALL_ARGUS=true
 
 # Each variant gets its own local tag, so building one does not silently
 # replace another and `make size VARIANT=slim` reports the image you expect.
@@ -56,7 +58,7 @@ test: build ## Run the smoke test suite inside the freshly built image
 	docker run --rm -v "$(CURDIR)/tests:/tests:ro" $(IMAGE) bash /tests/smoke.sh
 
 test-all: ## Build and smoke-test every variant, as the CI matrix does
-	@for v in base slim full; do \
+	@for v in $(VARIANTS); do \
 		printf '\n==> %s\n' "$$v"; \
 		$(MAKE) --no-print-directory test VARIANT=$$v || exit 1; \
 	done

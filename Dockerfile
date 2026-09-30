@@ -6,7 +6,7 @@
 #   node (official)  -> JS/TS runtime + npm/npx
 #   uv + ruff        -> Python toolchain, copied from Astral's release images
 #   go + rust        -> optional compiled-language toolchains, copied from the
-#                       official images; the `full` variant turns both on
+#                       official images; both `full` variants turn them on
 #   apt layer        -> search/media/build tooling agents shell out to
 #
 # All versions are build args so they can be pinned per build and bumped by
@@ -48,7 +48,7 @@ FROM ghcr.io/astral-sh/ruff:${RUFF_VERSION} AS ruff-bin
 FROM node:${NODE_VERSION}-${DEBIAN_SUITE}-slim AS toolchain-absent
 # The marker files keep each source directory non-empty. COPY from an empty
 # directory is accepted, but the behaviour is thin ice to build the disabled
-# path of every non-`full` build on; a zero-byte file removes the question and
+# path of every toolchain-free build on; a zero-byte file removes the question and
 # leaves the disabled state visible from inside a running container.
 RUN mkdir -p /usr/local/go /usr/local/rustup /usr/local/cargo \
     && touch /usr/local/go/.climage-absent \
@@ -85,13 +85,13 @@ ARG SKILLS_VERSION=1.7.0
 # tools another ~231 MB. Both default on; turn either off for a slim variant.
 ARG INSTALL_MEDIA=true
 ARG INSTALL_BUILD_TOOLS=true
-# Headless-browser system libraries, off by default — the `full` variant turns
+# Headless-browser system libraries, off by default — both `full` variants turn
 # them on. Deps only, no browser binary: a Playwright/Puppeteer browser build
 # has to match the client library version, so baking one in would just be
 # re-downloaded by any project on a different version. The libraries are the
 # part that needs root, and the part that is version-agnostic.
 ARG INSTALL_BROWSER=false
-# First-party tooling, off by default — the `full` image variant turns it on.
+# First-party tooling, off by default — only the `full-argus` variant turns it on.
 # Pinned to an exact release for the same reason the agent CLIs are.
 ARG INSTALL_ARGUS=false
 ARG ARGUS_VERSION=0.3.6

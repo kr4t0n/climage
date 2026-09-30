@@ -35,9 +35,10 @@ jobs:
       - name: Lint shell scripts
         run: shellcheck scripts/*.sh tests/*.sh
 
-  # Three variants x two architectures. `base` publishes as `latest`; `slim`
-  # drops the heavy apt groups; `full` adds the first-party tooling on top of
-  # base, plus the headless-browser libraries and the Go and Rust toolchains.
+  # Four variants x two architectures. `base` publishes as `latest`; `slim`
+  # drops the heavy apt groups; `full` adds the headless-browser libraries and
+  # the Go and Rust toolchains on top of base; `full-argus` is `full` plus the
+  # first-party argus tooling.
   # Every architecture builds and smoke-tests on its own native runner: QEMU
   # emulation of an arm64 apt layer costs tens of minutes, while a native arm
   # runner is free for public repositories.
@@ -48,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [base, slim, full]
+        variant: [base, slim, full, full-argus]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -62,6 +63,11 @@ jobs:
               INSTALL_MEDIA=false
               INSTALL_BUILD_TOOLS=false
           - variant: full
+            build_args: |
+              INSTALL_BROWSER=true
+              INSTALL_GO=true
+              INSTALL_RUST=true
+          - variant: full-argus
             build_args: |
               INSTALL_ARGUS=true
               INSTALL_BROWSER=true
@@ -106,7 +112,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [base, slim, full]
+        variant: [base, slim, full, full-argus]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -120,6 +126,11 @@ jobs:
               INSTALL_MEDIA=false
               INSTALL_BUILD_TOOLS=false
           - variant: full
+            build_args: |
+              INSTALL_BROWSER=true
+              INSTALL_GO=true
+              INSTALL_RUST=true
+          - variant: full-argus
             build_args: |
               INSTALL_ARGUS=true
               INSTALL_BROWSER=true
@@ -174,8 +185,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # One manifest per variant. `latest` is the base build; `slim` and `full` get
-  # their own bare tags and `-slim`/`-full`-suffixed release tags. There is
+  # One manifest per variant. `latest` is the base build; `slim`, `full` and
+  # `full-argus` get their own bare tags and suffixed release tags. There is
   # deliberately no `edge`: with `latest` already tracking main, it was a second
   # name for the same digest.
   manifest:
@@ -216,12 +227,26 @@ jobs:
               type=semver,pattern={{major}}.{{minor}},suffix=-full
               type=semver,pattern={{major}},suffix=-full,enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
               type=sha,format=short,suffix=-full
+          - variant: full-argus
+            flavor: latest=false
+            tags: |
+              type=raw,value=full-argus,enable={{is_default_branch}}
+              type=semver,pattern={{version}},suffix=-full-argus
+              type=semver,pattern={{major}}.{{minor}},suffix=-full-argus
+              type=semver,pattern={{major}},suffix=-full-argus,enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+              type=sha,format=short,suffix=-full-argus
     steps:
+      # Exact names, not `digest-<variant>-*`: that glob for `full` also
+      # matches `full-argus`, which would merge four images into one tag.
       - uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
-          pattern: digest-${{ matrix.variant }}-*
-          merge-multiple: true
+          name: digest-${{ matrix.variant }}-amd64
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          name: digest-${{ matrix.variant }}-arm64
 
       - uses: docker/setup-buildx-action@v3
 
