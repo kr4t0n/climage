@@ -261,37 +261,58 @@ from the volume, and `claude doctor` reported the update that put it there.
 matching how every other tool in the image is handled. Only the value `1`
 disables updates — `claude doctor` reports `0` and the empty string as enabled
 — so `0` is the documented opt-out, and the smoke test asserts the exact value.
-`skills` has no update mechanism at all. Codex does, and it is not yet closed —
-see the next entry.
+`skills` has no update mechanism at all. Codex has two; the image closes the
+silent one and leaves the prompted one open — see the next two entries.
 
 The variable prevents new shadow copies; it does not remove one an earlier image
 already let in. On an existing volume, `which -a claude` shows whether one is
 there, and `npm uninstall -g @anthropic-ai/claude-code` (as the runtime user,
 which targets `~/.npm-global`) removes it.
 
-**Codex can shadow its pin the same way, behind a prompt instead of a timer.**
-The interactive TUI checks for a newer release on every launch
-(`check_for_update_on_startup`, default `true`) and offers *Update now* / *Not
-now* / *Don't remind*, with *Update now* pre-selected. Accepting it — one Enter —
-or running `codex update` executes `npm install -g @openai/codex`, which lands in
-`~/.npm-global` and shadows the image exactly as Claude Code's self-update did.
-`codex exec` and `codex app-server --stdio`, which is how argus drives Codex,
-never prompt. Separately, the app-server daemon installs builds from
-`install.sh` into `~/.codex/packages/` on a schedule with no prompt at all, but
-it only runs when started explicitly (`codex agents`, `codex app-server daemon
-start`, `codex remote-control`) or through the experimental `daemon_auto_start`
-feature, which ships disabled; its setting lives in a `settings.json` under
-`~/.codex`, beyond the image's reach. `codex doctor` reports the effective
-`startup update check`, the update action and the cached latest version, which
-is the quickest way to see what a given container would do.
+**Codex's background daemon updates itself silently, so the image turns off its
+auto-start.** Since 0.157 (`daemon_auto_start`, now stable and default `true`),
+every interactive `codex` launch starts an app-server daemon. The first start
+copies the running CLI package into `~/.codex/packages/app-server-daemon/` —
+424 MB on the home volume — with no prompt, and a companion `daemon-updater`
+process then replaces that copy from `install.sh`: first after five minutes,
+then hourly. Measured in a throwaway `CODEX_HOME`, a daemon seeded from npm
+0.159.1 was running 0.159.2 330 seconds later, with `codex app-server daemon
+version` reporting `cliVersion 0.159.1` against `appServerVersion 0.159.2`.
+Interactive sessions talk to that daemon, so they run whatever it last fetched
+while `codex --version` still reports the pin. Do not trust the source here
+without re-running that experiment: the updater's eligibility check
+(`is_stable_standalone_release`) reads as if a package copied from npm would be
+skipped, but the copy is written with the same `auto-update-version` marker an
+`install.sh` install gets, so it qualifies.
 
-The prompt path has a ready fix that is deliberately not applied yet: write
-`check_for_update_on_startup = false` to `/etc/codex/config.toml`. Codex reads
-that file as a system layer below the user's `~/.codex/config.toml`, so it is a
-default a user can still override, and it sits outside `$HOME`, so a home
-volume cannot hide it. The key itself is verified — `codex doctor` flips to
-`false` under `-c check_for_update_on_startup=false` — but the `/etc` layer has
-only been read from source, not exercised in a built image.
+The image writes `[features] daemon_auto_start = false` to
+`/etc/codex/config.toml` — Codex's system layer, below the user's
+`~/.codex/config.toml`, so it is a default a user can still override, and
+outside `$HOME`, so a home volume cannot hide it. Interactive `codex` then runs
+its server in-process, as it did before 0.157. The smoke test asks `codex
+features list` for the effective value rather than grepping the file, so a
+release that stops reading the system layer fails CI. Explicit `codex agents`,
+`codex app-server daemon start` and `codex remote-control` still start the
+daemon, updater included; its own `auto_update_enabled` lives in
+`~/.codex/app-server-daemon/settings.json`, beyond the image's reach. `codex exec`
+and `codex app-server --stdio`, which is how argus drives Codex, never involve
+it. A volume that already ran a daemon keeps its copy in
+`~/.codex/packages/app-server-daemon/`. `codex app-server daemon stop` stops the
+server but, in testing, left the `daemon-updater` running; kill it by the PID in
+`~/.codex/app-server-daemon/daemon-updater.pid` before removing the directory.
+
+**Codex's startup update prompt is still open.** The interactive TUI checks for
+a newer release on every launch (`check_for_update_on_startup`, default `true`)
+and offers *Update now* / *Not now* / *Don't remind*, with *Update now*
+pre-selected. Accepting it — one Enter — or running `codex update` executes
+`npm install -g @openai/codex`, which lands in `~/.npm-global` and shadows the
+image exactly as Claude Code's self-update did. `codex doctor` reports the
+effective `startup update check`, the update action and the cached latest
+version. The fix is one more line in the same file,
+`check_for_update_on_startup = false` (a top-level key, above `[features]`);
+the key is verified with `codex doctor` under `-c`, and the file is now proven
+to be read. It is deliberately left open for now because it takes a keypress,
+not a timer.
 
 **`SHELL` is set with `ENV`, and checking it from bash lies.** Docker sets no
 `SHELL` of its own, and the `SHELL` Dockerfile directive only governs `RUN`
@@ -535,5 +556,5 @@ run; treat a step change as a regression to explain.
   obvious next CI step.
 - Docker Hub's repository description is not synced from `README.md`.
 - Codex's startup update prompt is still on, so one accepted prompt re-creates
-  the shadowing that `DISABLE_AUTOUPDATER` closed for Claude Code. The fix is
-  ready — see the Codex entry under gotchas.
+  the shadowing that `DISABLE_AUTOUPDATER` closed for Claude Code. The fix is a
+  single line in `/etc/codex/config.toml` — see the prompt entry under gotchas.

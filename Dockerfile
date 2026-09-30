@@ -77,7 +77,7 @@ ARG PYTHON_VERSION=3.12
 ARG INSTALL_CLAUDE_CODE=true
 ARG CLAUDE_CODE_VERSION=2.1.285
 ARG INSTALL_CODEX=true
-ARG CODEX_VERSION=0.156.0
+ARG CODEX_VERSION=0.159.2
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.7.0
 # Heavyweight package groups, measured: media pulls 172 packages / ~409 MB
@@ -324,6 +324,15 @@ RUN if [ "${INSTALL_CLAUDE_CODE}" = "true" ]; then \
 # every image upgrade. The pinned version then silently stops being the one that
 # runs. Only "1" disables it; opt back in with DISABLE_AUTOUPDATER=0.
 ENV DISABLE_AUTOUPDATER=1
+
+# Codex 0.157+ starts a background daemon on every interactive launch, running a
+# copy of itself under ~/.codex/packages that a companion updater replaces from
+# install.sh — the same drift, with no prompt. /etc/codex/config.toml is Codex's
+# system layer: below ~/.codex/config.toml, so a default rather than a lock.
+RUN if [ "${INSTALL_CODEX}" = "true" ]; then \
+        mkdir -p /etc/codex \
+        && printf '[features]\ndaemon_auto_start = false\n' > /etc/codex/config.toml; \
+    fi
 
 # --- First-party tooling ----------------------------------------------------
 # argus ships plain release binaries next to a SHASUMS256.txt manifest, so this

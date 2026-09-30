@@ -200,7 +200,7 @@ agent permissions, so review a source before installing it.
 | `INSTALL_CLAUDE_CODE` | `true` | Set `false` to omit the Claude Code CLI |
 | `CLAUDE_CODE_VERSION` | `2.1.285` | Exact Claude Code version (npm `latest`) |
 | `INSTALL_CODEX` | `true` | Set `false` to omit the Codex CLI |
-| `CODEX_VERSION` | `0.156.0` | Exact Codex CLI version (npm `latest`) |
+| `CODEX_VERSION` | `0.159.2` | Exact Codex CLI version (npm `latest`) |
 | `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
 | `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
 | `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |
@@ -228,6 +228,13 @@ agent permissions, so review a source before installing it.
 | `LANG` | `en_US.UTF-8` | Locale is generated in the image |
 | `SHELL` | `/bin/bash` | Shell that agents and tools spawn; without it they fall back to `/bin/sh` (dash) |
 | `DISABLE_AUTOUPDATER` | `1` | Stops Claude Code from updating itself, so the image's pinned version is the one that runs. Set `0` to re-enable; updates then land in `~/.npm-global` and take precedence over the image's copy |
+
+Codex's equivalent is a config file rather than a variable. The image ships
+`/etc/codex/config.toml` with `daemon_auto_start = false`, which stops
+interactive `codex` from starting its background server — a copy of Codex on
+the home volume that updates itself hourly. Turn it back on per user with
+`[features]` / `daemon_auto_start = true` in `~/.codex/config.toml`, which takes
+precedence; `codex features list` shows the effective value.
 
 ### Publishing credentials
 
