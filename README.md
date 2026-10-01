@@ -124,7 +124,7 @@ docker pull kr4t0n/climage:full
 ```
 
 `latest`, `slim`, `full` and `full-argus` follow `main` and move with every
-push. A release also publishes version tags — `0.2.0` and `0.2`, plus the
+push. A release also publishes version tags — `0.3.0` and `0.3`, plus the
 `-slim`, `-full` and `-full-argus` suffixed equivalents — and every build is
 addressable by a short-SHA tag. Pin a version tag when you need the base image
 to stay put.
