@@ -187,6 +187,18 @@ else
     failed=$((failed + 1))
 fi
 
+# Asks Codex for the effective value rather than grepping /etc/codex/config.toml,
+# so a Codex release that stops reading the system layer fails here.
+if [[ "${INSTALL_CODEX:-true}" == "true" ]]; then
+    daemon_flag=$(codex features list 2>/dev/null | awk '$1 == "daemon_auto_start" { print $NF }')
+    if [[ "${daemon_flag}" == "false" ]]; then
+        printf 'ok    %-14s daemon_auto_start=false\n' "codex daemon"
+    else
+        printf 'FAIL  %-14s daemon_auto_start is %s, expected false\n' "codex daemon" "${daemon_flag:-<missing>}"
+        failed=$((failed + 1))
+    fi
+fi
+
 # The runtime identity is part of the image's contract: uid 1000 keeps
 # bind-mounted host files sanely owned, and $HOME must match the account.
 # the shared `users` gid (100) is what lets an arbitrary-uid run keep group access.
