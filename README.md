@@ -248,7 +248,8 @@ precedence; `codex features list` shows the effective value.
 | --- | --- | --- |
 | `DOCKERHUB_USERNAME` | GitHub secret / `.env` | Docker Hub namespace and login |
 | `DOCKERHUB_TOKEN` | GitHub secret / `.env` | Docker Hub access token, Read & Write scope |
-| `IMAGE_NAME` | GitHub repo variable (optional) | Image name; defaults to `climage` |
+| `IMAGE_NAME` | GitHub repo variable / `.env` (optional) | Image name; defaults to `climage` |
+| `IMAGE_TAG` | `.env` (optional) | Tag for images the `Makefile` builds and pushes; defaults to `dev` |
 
 ## CI and publishing
 
@@ -270,6 +271,8 @@ A pull request builds and tests exactly what merging it would publish.
 ```
 .
 ├── Dockerfile                 # the image definition (single source of truth)
+├── AGENTS.md                  # design decisions, conventions and gotchas
+├── CLAUDE.md                  # points Claude Code at AGENTS.md
 ├── .dockerignore              # keeps the build context to scripts/ only
 ├── .hadolint.yaml             # Dockerfile lint rules
 ├── Makefile                   # build / test / run / push helpers
