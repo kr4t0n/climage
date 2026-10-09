@@ -173,6 +173,11 @@ work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
   array in the smoke test, which reports `skip` instead of failing.
 - Group apt packages by purpose and keep the grouping comment accurate.
 - Conventional Commits; scope is usually `docker`, `ci`, or `docs`.
+- Workflow actions are pinned to a full commit SHA with the release in a
+  trailing comment (`@<sha> # v4.4.0`); Dependabot's `github-actions` updater
+  bumps both. The workflow defaults to `permissions: contents: read`, so a job
+  that needs more declares it, and every checkout sets
+  `persist-credentials: false` because no job pushes to git.
 - Shell scripts are `bash` with `set -euo pipefail` and must pass `shellcheck`.
 
 ## Gotchas
