@@ -16,7 +16,7 @@ it to Docker Hub. There is no application code.
 
 | Area | Tools |
 | --- | --- |
-| Runtimes | `node`, `npm`, `npx`, `python3` (Debian), uv-managed CPython |
+| Runtimes | `node`, `npm`, `npx`, `pnpm`, `python3` (Debian), uv-managed CPython |
 | Python toolchain | `uv`, `uvx`, `ruff` |
 | Go toolchain | `go`, `gofmt` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
 | Rust toolchain | `rustc`, `cargo`, `rustup`, `clippy`, `rustfmt` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
@@ -37,10 +37,14 @@ agent types.
 Runs as the unprivileged `climage` user (uid 1000, in the stock `users` group,
 gid 100 — there is no per-user group) with `/workspace` as the
 working directory. `tini` is PID 1 so long-lived agent sessions reap their children. The
-image is designed to be extended at runtime without root: `uv tool install` and
-`npm install -g` both work as the `climage` user, in interactive and login
-shells, and both write under `$HOME` — so a volume mounted at `/home/climage`
-carries whatever an agent installs across restarts.
+image is designed to be extended at runtime without root: `uv tool install`,
+`npm install -g` and `pnpm add -g` all work as the `climage` user, in interactive
+and login shells, and all write under `$HOME` — so a volume mounted at
+`/home/climage` carries whatever an agent installs across restarts.
+
+`pnpm` is pinned like everything else, but a project whose `package.json` names
+a version in its `packageManager` field gets that version: pnpm fetches it on
+first use and runs it for that project only.
 
 The default command adapts to how the container was started: a terminal gets an
 interactive shell, piped stdin is run as a script, and a container with neither
@@ -124,7 +128,7 @@ docker pull kr4t0n/climage:full
 ```
 
 `latest`, `slim`, `full` and `full-argus` follow `main` and move with every
-push. A release also publishes version tags — `0.3.0` and `0.3`, plus the
+push. A release also publishes version tags — `0.4.0` and `0.4`, plus the
 `-slim`, `-full` and `-full-argus` suffixed equivalents — and every build is
 addressable by a short-SHA tag. Pin a version tag when you need the base image
 to stay put.
@@ -198,9 +202,9 @@ agent permissions, so review a source before installing it.
 | `UV_VERSION` | `0.12.13` | `uv`/`uvx` release copied from Astral's image |
 | `RUFF_VERSION` | `0.16.7` | `ruff` release copied from Astral's image |
 | `INSTALL_CLAUDE_CODE` | `true` | Set `false` to omit the Claude Code CLI |
-| `CLAUDE_CODE_VERSION` | `2.1.285` | Exact Claude Code version (npm `latest`) |
+| `CLAUDE_CODE_VERSION` | `2.1.295` | Exact Claude Code version (npm `latest`) |
 | `INSTALL_CODEX` | `true` | Set `false` to omit the Codex CLI |
-| `CODEX_VERSION` | `0.159.2` | Exact Codex CLI version (npm `latest`) |
+| `CODEX_VERSION` | `0.162.0` | Exact Codex CLI version (npm `latest`) |
 | `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
 | `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
 | `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |
@@ -212,6 +216,7 @@ agent permissions, so review a source before installing it.
 | `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in both `full` variants — ~18 MB, since the media group already provides most of the chain |
 | `ARGUS_VERSION` | `0.3.6` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
 | `SKILLS_VERSION` | `1.7.0` | Exact [skills](https://github.com/vercel-labs/skills) version |
+| `PNPM_VERSION` | `12.10.1` | Exact [pnpm](https://pnpm.io) version (npm `latest`); a project's `packageManager` field still selects its own |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
 
 ### Runtime environment variables
@@ -222,6 +227,7 @@ agent permissions, so review a source before installing it.
 | `UV_CACHE_DIR` | `/home/climage/.cache/uv` | Mount a volume here to persist Python downloads |
 | `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` | `/home/climage/.uv/tools`, `/home/climage/.uv/bin` | Where `uv tool install` puts tools and their entry points — under `$HOME`, so a home volume persists them |
 | `NPM_CONFIG_PREFIX` | `/home/climage/.npm-global` | Lets the unprivileged user `npm install -g` at runtime |
+| `PNPM_HOME` | `/home/climage/.local/share/pnpm` | Where `pnpm add -g` installs; its `bin/` subdirectory is on `PATH`, which pnpm 11 and later require. The store (`~/.local/share/pnpm/store`) sits alongside, so a home volume keeps both |
 | `GOPATH` / `GOBIN` | `/home/climage/.go`, `/home/climage/.go/bin` | Where `go install` puts binaries, and the root of all Go state — under `$HOME`, so a home volume persists it |
 | `GOCACHE` / `GOENV` | `/home/climage/.go/cache`, `/home/climage/.go/env` | Moved off their `~/.cache` and `~/.config` defaults so everything Go writes lives in `~/.go`. `GOMODCACHE` follows `GOPATH` to `~/.go/pkg/mod` |
 | `CARGO_INSTALL_ROOT` | `/home/climage/.cargo` | Where `cargo install` puts binaries, for the same reason. The toolchain itself stays in `/opt/rust` |

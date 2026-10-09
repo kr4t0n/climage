@@ -8,6 +8,7 @@ REQUIRED=(
     "node --version"
     "npm --version"
     "npx --version"
+    "pnpm --version"
     "python --version"
     "python3 --version"
     "uv --version"
@@ -148,6 +149,18 @@ check_runtime_bindir() { # check_runtime_bindir <label> <dir>
         failed=$((failed + 1))
     fi
 }
+
+check_runtime_bindir "pnpm bin" "${PNPM_HOME:+${PNPM_HOME}/bin}"
+# pnpm decides its global bin dir itself — it moved from $PNPM_HOME to
+# $PNPM_HOME/bin in pnpm 11 — so ask it, rather than trusting the PATH entry.
+pnpm_global_bin=$(pnpm bin -g 2>/dev/null || true)
+if [[ -n "${PNPM_HOME:-}" && "${pnpm_global_bin}" == "${PNPM_HOME}/bin" ]]; then
+    printf 'ok    %-14s pnpm bin -g matches PATH\n' "pnpm global"
+else
+    printf 'FAIL  %-14s pnpm bin -g is %s, expected %s\n' "pnpm global" \
+        "${pnpm_global_bin:-<none>}" "${PNPM_HOME:-<unset>}/bin"
+    failed=$((failed + 1))
+fi
 
 if [[ "${INSTALL_GO:-false}" == "true" ]]; then
     check_runtime_bindir "go bin" "${GOBIN:-}"

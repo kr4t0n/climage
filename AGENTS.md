@@ -130,10 +130,14 @@ three: `GOPATH`, `GOBIN`, `GOCACHE` and `GOENV` are all set explicitly, and
 from the near-universal `~/go` convention, so code that hardcodes `$HOME/go`
 rather than reading `go env GOPATH` will not find anything.
 
-**Runtime-writable global npm prefix.** `NPM_CONFIG_PREFIX=/home/climage/.npm-global`
+**Runtime-writable global npm and pnpm prefixes.** `NPM_CONFIG_PREFIX=/home/climage/.npm-global`
 is on `PATH` ahead of `/usr/local/bin`, so an agent can `npm install -g` more
 tooling without root. Same reasoning as uv tools: in `$HOME`, therefore on the
-volume, therefore still installed after a restart.
+volume, therefore still installed after a restart. pnpm follows the identical
+split: the pinned `pnpm` itself is installed as root into `/usr/local` with the
+agent CLIs, while `PNPM_HOME=/home/climage/.local/share/pnpm` — pnpm's own
+default location, and where its content-addressed store already lives — takes
+`pnpm add -g` installs, with `$PNPM_HOME/bin` on `PATH`.
 
 **`tini` as PID 1.** Agent sessions spawn long chains of subprocesses. Without an
 init, orphaned children accumulate as zombies and signals do not propagate.
@@ -242,7 +246,7 @@ explicitly. This is done with plain symlinks rather than `uv python install
 
 **Both agent CLIs track npm `latest`, by choice.** `@anthropic-ai/claude-code`
 publishes `stable`, `latest`, and `next`, where `latest` equals `next` and runs
-ahead of `stable` — often by several weeks (2.1.280 vs 2.1.285 at the time of
+ahead of `stable` — often by several weeks (2.1.286 vs 2.1.295 at the time of
 writing). `@openai/codex` publishes no `stable` tag at all; its non-`latest`
 tags are alpha/beta and platform-specific builds. Rather than have the two CLIs
 follow different release trains, both pins follow `latest`. The trade-off is
@@ -270,8 +274,9 @@ there, and `npm uninstall -g @anthropic-ai/claude-code` (as the runtime user,
 which targets `~/.npm-global`) removes it.
 
 **Codex's background daemon updates itself silently, so the image turns off its
-auto-start.** Since 0.157 (`daemon_auto_start`, now stable and default `true`),
-every interactive `codex` launch starts an app-server daemon. The first start
+auto-start.** Since 0.157 (`daemon_auto_start`, now stable and default `true`,
+re-checked unchanged at 0.162.0), every interactive `codex` launch starts an
+app-server daemon. The first start
 copies the running CLI package into `~/.codex/packages/app-server-daemon/` —
 424 MB on the home volume — with no prompt, and a companion `daemon-updater`
 process then replaces that copy from `install.sh`: first after five minutes,
@@ -300,6 +305,27 @@ it. A volume that already ran a daemon keeps its copy in
 `~/.codex/packages/app-server-daemon/`. `codex app-server daemon stop` stops the
 server but, in testing, left the `daemon-updater` running; kill it by the PID in
 `~/.codex/app-server-daemon/daemon-updater.pid` before removing the directory.
+
+**pnpm 11 moved its global bin directory, and refuses to install without it.**
+pnpm 10 linked global bins straight into `$PNPM_HOME`; 11 and 12 use
+`$PNPM_HOME/bin` (checked with `pnpm bin -g` on 10.34.6, 11.28.5 and 12.10.1),
+and `pnpm add -g` fails with
+`ERR_PNPM_GLOBAL_BIN_DIR_NOT_IN_PATH` unless that exact directory is on `PATH`
+— a `PATH` entry for `$PNPM_HOME`, the long-standing `pnpm setup` convention, is
+not enough. The smoke test therefore asks pnpm (`pnpm bin -g`) rather than
+trusting the `PATH` entry, so the next layout move fails CI instead of every
+agent's first global install. A missing `PNPM_HOME` is not a problem: under a
+home volume the build-time directory is hidden, and `pnpm add -g` recreates it.
+
+Two pnpm behaviours resemble the CLI self-updates above but are deliberately
+left alone. A project's `packageManager` field (`"pnpm@10.34.6"`) makes pnpm
+download and run that version for the project — measured: `pnpm --version`
+inside such a project printed 10.34.6, outside it 12.10.1. That is per-project
+and wanted, the same trade as Go's `GOTOOLCHAIN=auto`. And `pnpm self-update`
+installs into `$PNPM_HOME/bin/pnpm`, which shadows the image's pin exactly as
+Claude Code's updater did — but only when someone runs it; pnpm has no
+automatic path. `which -a pnpm` shows a shadow copy, and
+`pnpm remove -g pnpm` removes it.
 
 **Codex's startup update prompt is still open.** The interactive TUI checks for
 a newer release on every launch (`check_for_update_on_startup`, default `true`)
