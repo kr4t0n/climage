@@ -415,19 +415,31 @@ variants table is the registry figure, and it comes from Docker Hub, not from
 `inspect`. The check that settles it: CI reports 1.9 GB for the base build,
 against a README that lists 2.0 GB uncompressed and 698 MB compressed.
 
-Measured on amd64 in CI, the four variants are 1.3 GB (`slim`), 1.9 GB
-(`base`), and 2.8 GB for both `full` and `full-argus`; arm64 runs 0.1–0.2 GB
+Measured on amd64 in CI, the four variants are 1.5 GB (`slim`), 2.1 GB
+(`base`), and 2.9 GB for both `full` and `full-argus`; arm64 runs 0.1–0.2 GB
 smaller across the board.
+
+The CI figure is rounded *up* — `numfmt --to=iec` rounds away from zero, so
+2,147,483,649 bytes prints as `2.1G` — which makes step changes look up to
+0.1 GB larger than they are. The pnpm release moved `base` from `1.9G` to
+`2.1G` on roughly 85 MB of real growth. Attribute a step change from the
+registry instead: diff the per-layer compressed sizes of the old and new
+manifests (amd64), which are exact. For that release the diff was +36.3 MB,
+all in three layers: pnpm +25.0, agent CLIs +9.5, the apt layer +1.8.
+
 Refreshing the compressed column has its own trap: Docker Hub's tag API reports
 `full_size` for one architecture only — arm64, the smaller — so read
 `.images[]` and pick `amd64` explicitly, or the table understates the image by
 tens of megabytes. The breakdown: the Go and Rust toolchains account for nearly
-all of the 0.9 GB between `base` and `full` (the browser libraries are ~18 MB
+all of the ~0.8 GB between `base` and `full` (the browser libraries are ~18 MB
 of it), of which Go's `/usr/local/go` is 282 MB, leaving Rust the larger half.
 `full-argus` adds only the argus-sidecar binary on top — 12 MB uncompressed,
-5 MB in the registry — which is why the two share an uncompressed figure. Then agent CLIs ~612 MB of native binaries, ffmpeg's dependency
-tree 364 MB, the build-essential chain 231 MB, the base image ~230 MB, uv's
-CPython 123 MB. Only the group flags move the needle; trimming
+5 MB in the registry — which is why the two share an uncompressed figure. Then
+agent CLIs ~680 MB of native binaries (Claude Code 245 MB and Codex 432 MB as
+of 2.1.295 / 0.162.0), ffmpeg's dependency tree 364 MB, the build-essential
+chain 231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB —
+pnpm 12 ships a self-contained native executable rather than JavaScript, so its
+npm-registry size (4 MB) badly understates what lands on disk. Only the group flags move the needle; trimming
 individual utilities does not. `python3-dev`/`python3-venv` were dropped as
 redundant — `python3` resolves to uv's interpreter, so C extensions build
 against uv's headers, not Debian's 3.11 ones.
