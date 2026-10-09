@@ -47,7 +47,7 @@ Four inputs converge on one final stage:
 | `scripts/climage-idle.sh` | Baked in as `/usr/local/bin/climage-idle`, the image's `CMD`. Dispatches on stdin: terminal → `bash`, pipe/file → `bash` reading it, neither → `sleep infinity`. |
 | `tests/smoke.sh` | **Not** baked in — bind-mounted at test time so the image stays free of test assets. Asserts the tool inventory. |
 | `Makefile` | The local equivalent of the CI jobs, including the variant matrix (`make test VARIANT=full`, `make test-all`). Keep the two in sync, and keep version pins out of it — see the gotchas. |
-| `.github/workflows/ci.yml` | lint → build & test → publish by digest → manifest. |
+| `.github/workflows/ci.yml` | lint + secret scan → build & test → publish by digest → manifest. |
 
 ## Key design decisions
 
@@ -173,6 +173,11 @@ work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
   array in the smoke test, which reports `skip` instead of failing.
 - Group apt packages by purpose and keep the grouping comment accurate.
 - Conventional Commits; scope is usually `docker`, `ci`, or `docs`.
+- Workflow actions are pinned to a full commit SHA with the release in a
+  trailing comment (`@<sha> # v4.4.0`); Dependabot's `github-actions` updater
+  bumps both. The workflow defaults to `permissions: contents: read`, so a job
+  that needs more declares it, and every checkout sets
+  `persist-credentials: false` because no job pushes to git.
 - Shell scripts are `bash` with `set -euo pipefail` and must pass `shellcheck`.
 
 ## Gotchas
@@ -583,6 +588,24 @@ the variant is `full`. The `full` tag would then be assembled from four images,
 two per architecture, with nothing in the build failing to say so. Each
 architecture is therefore downloaded by its exact name. Adding an architecture
 means adding a download step there as well as a matrix entry.
+
+**The secret scan reads every branch's history, and gates the build.** The
+`secret-scan` job runs `gitleaks git` without `--log-opts`, which is
+`git log --all`, after a `fetch-depth: 0` checkout: every commit on every branch
+and tag, not just the pull request's diff, because the repository is public and
+a deleted secret stays in its history. `build-test` needs the job, so a finding
+also stops the publish on `main`. A real finding means rotating the secret;
+scrubbing it from history rewrites a published branch. A false positive goes in
+`.gitleaks.toml` (with `[extend] useDefault = true`, or it replaces the default
+rules) or as a fingerprint in `.gitleaksignore`; gitleaks reads both from the
+repository root, in CI and in the hook. The version is pinned twice, as
+`GITLEAKS_VERSION` plus the tarball's `GITLEAKS_SHA256` in the workflow and as
+the hook's `rev`, and nothing bumps either automatically, so move them together.
+
+**The `hadolint-docker` pre-commit hook ignores its `rev`.** Upstream's hook
+entry is the bare `ghcr.io/hadolint/hadolint`, so it runs whatever `latest` is,
+while CI's hadolint-action pins its hadolint image by digest. After a hadolint
+release a local pass and the CI result can disagree; CI is the one that gates.
 
 **Image size is a real constraint.** `build-essential`, `ffmpeg`, and
 `imagemagick` dominate the footprint. The CI build reports the size on every

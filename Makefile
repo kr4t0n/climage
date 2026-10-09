@@ -69,9 +69,10 @@ run: ## Run a one-off command in the image (make run CMD="rg --version")
 shell: ## Open an interactive shell with the current directory mounted
 	docker run --rm -it -v "$(CURDIR):/workspace" $(IMAGE)
 
-lint: ## Lint the Dockerfile and shell scripts (requires hadolint + shellcheck)
+lint: ## Lint and scan for secrets (requires hadolint, shellcheck, gitleaks)
 	hadolint --config .hadolint.yaml Dockerfile
 	shellcheck scripts/*.sh tests/*.sh
+	gitleaks git --redact --no-banner .
 
 size: ## Print the size of the built image
 	@docker image inspect $(IMAGE) --format '{{.Size}}' | numfmt --to=iec

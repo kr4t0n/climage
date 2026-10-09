@@ -56,7 +56,7 @@ your own command bypasses it entirely.
 - Docker 24+ with BuildKit (Docker 29 tested)
 - `docker buildx` for multi-architecture builds (bundled with Docker Desktop and
   recent Docker Engine)
-- Optional, for local linting: `hadolint`, `shellcheck`
+- Optional, for local linting: `hadolint`, `shellcheck`, `gitleaks`
 
 ## Quick start
 
@@ -86,7 +86,7 @@ make build        # build for the host architecture, tagged climage:dev
 make test         # build, then run tests/smoke.sh inside the image
 make shell        # interactive shell with $PWD mounted at /workspace
 make run CMD="uv --version"
-make lint         # hadolint + shellcheck
+make lint         # hadolint + shellcheck + gitleaks
 make size         # report the image size
 make push         # multi-arch build + push to Docker Hub (CI normally does this)
 make help         # list all targets
@@ -248,18 +248,36 @@ precedence; `codex features list` shows the effective value.
 | --- | --- | --- |
 | `DOCKERHUB_USERNAME` | GitHub secret / `.env` | Docker Hub namespace and login |
 | `DOCKERHUB_TOKEN` | GitHub secret / `.env` | Docker Hub access token, Read & Write scope |
-| `IMAGE_NAME` | GitHub repo variable (optional) | Image name; defaults to `climage` |
+| `IMAGE_NAME` | GitHub repo variable / `.env` (optional) | Image name; defaults to `climage` |
+| `IMAGE_TAG` | `.env` (optional) | Tag for images the `Makefile` builds and pushes; defaults to `dev` |
+
+## CI and publishing
+
+`.github/workflows/ci.yml` runs on every pull request to `main`, every push to
+`main`, and every `v*` tag:
+
+1. **Lint and secret scan** — hadolint and shellcheck, and gitleaks over the
+   full git history.
+2. **Build and smoke test** — all four variants, each on a native amd64 and a
+   native arm64 runner, with the image size reported.
+3. **Publish** — pushes to `main` and `v*` tags only. Each build is pushed to
+   Docker Hub by digest, then assembled into the multi-arch tags described under
+   [Image variants](#image-variants).
+
+A pull request builds and tests exactly what merging it would publish.
 
 ## Project structure
 
 ```
 .
 ├── Dockerfile                 # the image definition (single source of truth)
+├── AGENTS.md                  # design decisions, conventions and gotchas
+├── CLAUDE.md                  # points Claude Code at AGENTS.md
 ├── .dockerignore              # keeps the build context to scripts/ only
 ├── .hadolint.yaml             # Dockerfile lint rules
 ├── Makefile                   # build / test / run / push helpers
 ├── .env.example               # template for local publishing credentials
-├── .pre-commit-config.yaml    # hadolint + shellcheck + hygiene hooks
+├── .pre-commit-config.yaml    # gitleaks + hadolint + shellcheck + hygiene hooks
 ├── scripts/
 │   ├── entrypoint.sh          # workspace checks, optional init hook, exec
 │   └── climage-idle.sh        # the default CMD: shell, script, or park
@@ -267,15 +285,21 @@ precedence; `codex features list` shows the effective value.
 │   └── smoke.sh               # tool inventory assertions, run inside the image
 └── .github/
     ├── dependabot.yml         # weekly base-image and action bumps
-    └── workflows/ci.yml       # lint -> build & test -> publish
+    └── workflows/ci.yml       # lint & secret scan -> build & test -> publish
 ```
 
 ## Contributing
 
 ```bash
-uv add --dev pre-commit   # or: pipx install pre-commit
+uv tool install pre-commit   # or: pipx install pre-commit
 pre-commit install
 ```
+
+The hooks scan staged changes for secrets with gitleaks, lint the Dockerfile
+with hadolint (through Docker) and the scripts with shellcheck. CI repeats the
+secret scan over the whole history. A finding that is not a secret is
+allowlisted in `.gitleaks.toml` or `.gitleaksignore` and reviewed like any
+other change.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 Adding a tool means updating three places: the `Dockerfile` package list, the
