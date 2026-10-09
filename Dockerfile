@@ -3,7 +3,7 @@
 # climage — a batteries-included base image for CLI coding agents.
 #
 # Layout:
-#   node (official)  -> JS/TS runtime + npm/npx
+#   node (official)  -> JS/TS runtime + npm/npx, plus a pinned pnpm
 #   uv + ruff        -> Python toolchain, copied from Astral's release images
 #   go + rust        -> optional compiled-language toolchains, copied from the
 #                       official images; both `full` variants turn them on
@@ -75,11 +75,12 @@ ARG PYTHON_VERSION=3.12
 # produce different images. Both CLIs track their npm `latest`; Claude Code also
 # publishes a slower `stable` tag, which this image deliberately does not use.
 ARG INSTALL_CLAUDE_CODE=true
-ARG CLAUDE_CODE_VERSION=2.1.285
+ARG CLAUDE_CODE_VERSION=2.1.295
 ARG INSTALL_CODEX=true
-ARG CODEX_VERSION=0.159.2
+ARG CODEX_VERSION=0.162.0
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.7.0
+ARG PNPM_VERSION=12.10.1
 # Heavyweight package groups, measured: media pulls 172 packages / ~409 MB
 # (ffmpeg alone drags in LLVM, mesa GL drivers and a speech synthesiser), build
 # tools another ~231 MB. Both default on; turn either off for a slim variant.
@@ -307,6 +308,13 @@ RUN if [ "${INSTALL_RUST}" = "true" ]; then \
         && chown -R "${USERNAME}:${USERGROUP}" /opt/rust; \
     fi
 
+# --- pnpm -------------------------------------------------------------------
+# Installed as root into /usr/local, like the agent CLIs, so a home volume
+# cannot hide it. A project's `packageManager` field still wins: pnpm fetches
+# and runs that version for the project, leaving this pin as the default.
+RUN npm install -g "pnpm@${PNPM_VERSION}" \
+    && npm cache clean --force
+
 # --- Agent CLIs -------------------------------------------------------------
 RUN if [ "${INSTALL_CLAUDE_CODE}" = "true" ]; then \
         npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"; \
@@ -362,21 +370,25 @@ RUN if [ "${INSTALL_ARGUS}" = "true" ]; then \
 
 # Everything the unprivileged user installs at runtime lands in $HOME, so a
 # volume mounted there carries it across container restarts: npm globals in
-# .npm-global, uv tools in .uv. All three dirs precede /usr/local/bin on PATH.
+# .npm-global, pnpm globals in .local/share/pnpm, uv tools in .uv. Every one of
+# these bin dirs precedes /usr/local/bin on PATH.
+# pnpm 11+ puts global bins in $PNPM_HOME/bin, not $PNPM_HOME as pnpm 10 did,
+# and refuses `pnpm add -g` unless that exact directory is on PATH.
 ENV NPM_CONFIG_PREFIX=/home/${USERNAME}/.npm-global \
+    PNPM_HOME=/home/${USERNAME}/.local/share/pnpm \
     UV_TOOL_DIR=/home/${USERNAME}/.uv/tools \
     UV_TOOL_BIN_DIR=/home/${USERNAME}/.uv/bin
 # Runtime-install directories first, then the toolchains they extend.
-ENV PATH=/home/${USERNAME}/.npm-global/bin:/home/${USERNAME}/.uv/bin:/home/${USERNAME}/.go/bin:/home/${USERNAME}/.cargo/bin:/opt/uv/bin:/opt/rust/cargo/bin:/usr/local/go/bin:${PATH}
+ENV PATH=/home/${USERNAME}/.npm-global/bin:/home/${USERNAME}/.local/share/pnpm/bin:/home/${USERNAME}/.uv/bin:/home/${USERNAME}/.go/bin:/home/${USERNAME}/.cargo/bin:/opt/uv/bin:/opt/rust/cargo/bin:/usr/local/go/bin:${PATH}
 
 # Debian's /etc/profile overwrites PATH wholesale, so a login shell
 # (`bash -lc ...`, as agents often spawn) would lose the directories above.
 # Every entry added to ENV PATH must be mirrored here, in the same order.
-RUN printf 'export PATH="%s/bin:%s:%s:%s/bin:/opt/uv/bin:/opt/rust/cargo/bin:/usr/local/go/bin:$PATH"\n' \
-        "${NPM_CONFIG_PREFIX}" "${UV_TOOL_BIN_DIR}" "${GOBIN}" "${CARGO_INSTALL_ROOT}" \
+RUN printf 'export PATH="%s/bin:%s/bin:%s:%s:%s/bin:/opt/uv/bin:/opt/rust/cargo/bin:/usr/local/go/bin:$PATH"\n' \
+        "${NPM_CONFIG_PREFIX}" "${PNPM_HOME}" "${UV_TOOL_BIN_DIR}" "${GOBIN}" "${CARGO_INSTALL_ROOT}" \
         > /etc/profile.d/10-climage-path.sh \
     && chmod 0644 /etc/profile.d/10-climage-path.sh \
-    && mkdir -p "${NPM_CONFIG_PREFIX}" "${UV_TOOL_DIR}" "${UV_TOOL_BIN_DIR}" \
+    && mkdir -p "${NPM_CONFIG_PREFIX}" "${PNPM_HOME}/bin" "${UV_TOOL_DIR}" "${UV_TOOL_BIN_DIR}" \
         "${GOBIN}" "${CARGO_INSTALL_ROOT}/bin" \
         "/home/${USERNAME}/.cache" /workspace \
     && chown -R "${USERNAME}:${USERGROUP}" "/home/${USERNAME}" /workspace
