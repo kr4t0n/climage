@@ -16,7 +16,7 @@ it to Docker Hub. There is no application code.
 
 | Area | Tools |
 | --- | --- |
-| Runtimes | `node`, `npm`, `npx`, `pnpm`, `python3` (Debian), uv-managed CPython |
+| Runtimes | `node`, `npm`, `npx`, `pnpm`, `corepack`, `python3` (Debian), uv-managed CPython |
 | Python toolchain | `uv`, `uvx`, `ruff` |
 | Go toolchain | `go`, `gofmt` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
 | Rust toolchain | `rustc`, `cargo`, `rustup`, `clippy`, `rustfmt`, `cargo audit` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
@@ -45,7 +45,9 @@ and login shells, and all write under `$HOME` — so a volume mounted at
 
 `pnpm` is pinned like everything else, but a project whose `package.json` names
 a version in its `packageManager` field gets that version: pnpm fetches it on
-first use and runs it for that project only.
+first use and runs it for that project only. `corepack`, which comes with
+Node.js, is also present but not enabled: `corepack pnpm` runs the
+`packageManager` version without needing shims on `PATH`.
 
 The default command adapts to how the container was started: a terminal gets an
 interactive shell, piped stdin is run as a script, and a container with neither

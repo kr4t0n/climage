@@ -9,6 +9,7 @@ REQUIRED=(
     "npm --version"
     "npx --version"
     "pnpm --version"
+    "corepack --version"
     "python --version"
     "python3 --version"
     "uv --version"

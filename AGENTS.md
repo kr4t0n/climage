@@ -174,6 +174,15 @@ agent CLIs, while `PNPM_HOME=/home/climage/.local/share/pnpm` — pnpm's own
 default location, and where its content-addressed store already lives — takes
 `pnpm add -g` installs, with `$PNPM_HOME/bin` on `PATH`.
 
+corepack ships inside the Node.js distribution, so its version follows the base
+image rather than a pin here (0.36.0 with Node 24.21.0). It is deliberately not
+enabled: `corepack enable` writes its shims next to the `corepack` binary, into
+root-owned `/usr/local/bin`, where the runtime user cannot write and where its
+`pnpm` shim would take the path the pinned `pnpm` already occupies.
+`corepack pnpm` needs no shims. For pnpm 11 and
+later corepack runs the package's `bin/pnpm.mjs`, which downloads pnpm's native
+binary on first use into `~/.cache/node/corepack`.
+
 **`tini` as PID 1.** Agent sessions spawn long chains of subprocesses. Without an
 init, orphaned children accumulate as zombies and signals do not propagate.
 
