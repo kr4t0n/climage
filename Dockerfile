@@ -287,9 +287,9 @@ RUN uv python install "${PYTHON_VERSION}" \
     && chown -R "${USERNAME}:${USERGROUP}" /opt/uv \
     && chmod -R a+rX /opt/uv
 
-# pre-commit for repositories that are not Python projects and so have no
-# lockfile to pin it in; a Python project still runs its own locked copy with
-# `uv run pre-commit`. Built against the pinned interpreter, and in /opt/uv
+# pre-commit is the launcher for a project's hooks, so it comes from the image
+# rather than from any project's lockfile, Python projects included; a project
+# pins its hooks by `rev`. Built against the pinned interpreter, and in /opt/uv
 # rather than $HOME, so the hook script `pre-commit install` writes keeps
 # pointing at an interpreter that exists — unlike one installed through uvx,
 # whose environment lives in a prunable cache.
