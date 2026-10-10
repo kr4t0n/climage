@@ -14,6 +14,7 @@ REQUIRED=(
     "uv --version"
     "uvx --version"
     "ruff --version"
+    "pre-commit --version"
     "rg --version"
     "fd --version"
     "bat --version"
@@ -131,6 +132,17 @@ if [[ "${UV_TOOL_DIR:-}" == "${HOME}/"* && "${tool_bin}" == "${HOME}/"* ]]; then
     printf 'ok    %-14s under %s, survives a home volume\n' "uv tool dir" "${HOME}"
 else
     printf 'FAIL  %-14s %s must live under %s\n' "uv tool dir" "${UV_TOOL_DIR:-<unset>}" "${HOME}"
+    failed=$((failed + 1))
+fi
+
+# pre-commit is baked into /opt/uv/bin rather than the uv tool dir under $HOME,
+# so a volume mounted over the home directory cannot hide it.
+precommit_path=$(command -v pre-commit 2>/dev/null || true)
+if [[ "${precommit_path}" == /opt/uv/bin/pre-commit ]]; then
+    printf 'ok    %-14s %s, outside %s\n' "pre-commit dir" "${precommit_path}" "${HOME}"
+else
+    printf 'FAIL  %-14s resolves to %s, expected /opt/uv/bin/pre-commit\n' \
+        "pre-commit dir" "${precommit_path:-<none>}"
     failed=$((failed + 1))
 fi
 

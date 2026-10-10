@@ -89,6 +89,15 @@ outside every manifest. gitleaks is a Go binary that commit hooks call from
 expects it — and without one, pre-commit's stock `gitleaks` hook downloads a Go
 toolchain from go.dev and compiles gitleaks into every fresh hook cache.
 
+pre-commit itself is the same case for any repository that is not a Python
+project: there is no lockfile to pin it in. Running it through `uvx` works once,
+but `pre-commit install` records the interpreter it ran under in the git hook,
+and a uvx environment lives in uv's cache — after a `uv cache prune` the hook
+finds neither that interpreter nor a `pre-commit` on `PATH`, and every commit
+fails. The baked copy in `/opt/uv/tools` gives the hook a stable interpreter. A
+Python project should still add pre-commit as a dev dependency and run its own
+locked copy through `uv run`.
+
 **Four variants, and `base` is the one that publishes as `latest`.** The ladder
 is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus the
 headless-browser libraries and the Go and Rust toolchains — the languages
@@ -129,7 +138,8 @@ still be there after a pod restart, which only happens if they land on that same
 volume — so `UV_TOOL_DIR`/`UV_TOOL_BIN_DIR` point into `/home/climage/.uv`.
 `/opt/uv` stays `chown`ed to the runtime user and `/opt/uv/bin` stays on `PATH`,
 so a derived image that wants tools in a layer instead of on a volume overrides
-the two vars and needs no `PATH` change.
+the two vars and needs no `PATH` change. The image does exactly that for its own
+pre-commit, setting the two vars for that one `RUN` only.
 
 Go and Rust follow the same rule, and it is the rule to apply to any language
 added later. Toolchain outside `$HOME` (`/usr/local/go`, `/opt/rust`), runtime
@@ -462,7 +472,8 @@ of 2.1.295 / 0.162.0), ffmpeg's dependency tree 364 MB, the build-essential
 chain 231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB —
 pnpm 12 ships a self-contained native executable rather than JavaScript, so its
 npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
-21 MB static binary to every variant. Only the group flags move the needle; trimming
+21 MB static binary to every variant, and pre-commit's tool environment 18 MB.
+Only the group flags move the needle; trimming
 individual utilities does not. `python3-dev`/`python3-venv` were dropped as
 redundant — `python3` resolves to uv's interpreter, so C extensions build
 against uv's headers, not Debian's 3.11 ones.

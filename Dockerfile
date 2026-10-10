@@ -4,7 +4,8 @@
 #
 # Layout:
 #   node (official)  -> JS/TS runtime + npm/npx, plus a pinned pnpm
-#   uv + ruff        -> Python toolchain, copied from Astral's release images
+#   uv + ruff        -> Python toolchain, copied from Astral's release images,
+#                       plus pre-commit baked in as a uv tool
 #   go + rust        -> optional compiled-language toolchains, copied from the
 #                       official images; both `full` variants turn them on
 #   apt layer        -> search/media/build tooling agents shell out to
@@ -82,6 +83,7 @@ ARG CODEX_VERSION=0.162.0
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.7.0
 ARG PNPM_VERSION=12.10.1
+ARG PRE_COMMIT_VERSION=4.6.2
 # The same release ci.yml scans with and the gitleaks hook in
 # .pre-commit-config.yaml builds; the three pins move together.
 ARG GITLEAKS_VERSION=8.30.1
@@ -261,12 +263,25 @@ RUN uv python install "${PYTHON_VERSION}" \
     # comes first on PATH, so `python`/`python3` mean the pinned interpreter.
     && ln -sfn "$(uv python find "${PYTHON_VERSION}")" /usr/local/bin/python3 \
     && ln -sfn "$(uv python find "${PYTHON_VERSION}")" /usr/local/bin/python \
-    # Kept for derived images that point UV_TOOL_DIR/UV_TOOL_BIN_DIR back here to
-    # bake tools into a layer; /opt/uv/bin stays on PATH so that is a one-line
-    # ENV override with no PATH surgery.
+    # Tools baked into a layer live here, out of reach of a home volume: this
+    # image's own pre-commit below, and anything a derived image adds by
+    # pointing UV_TOOL_DIR/UV_TOOL_BIN_DIR back here. /opt/uv/bin stays on
+    # PATH, so that is a one-line ENV override with no PATH surgery.
     && mkdir -p /opt/uv/tools /opt/uv/bin \
     && chown -R "${USERNAME}:${USERGROUP}" /opt/uv \
     && chmod -R a+rX /opt/uv
+
+# pre-commit for repositories that are not Python projects and so have no
+# lockfile to pin it in; a Python project still runs its own locked copy with
+# `uv run pre-commit`. Built against the pinned interpreter, and in /opt/uv
+# rather than $HOME, so the hook script `pre-commit install` writes keeps
+# pointing at an interpreter that exists — unlike one installed through uvx,
+# whose environment lives in a prunable cache.
+RUN UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/opt/uv/bin \
+        uv tool install --no-cache --python "${PYTHON_VERSION}" \
+        "pre-commit==${PRE_COMMIT_VERSION}" \
+    && chown -R "${USERNAME}:${USERGROUP}" /opt/uv/tools /opt/uv/bin \
+    && chmod -R a+rX /opt/uv/tools /opt/uv/bin
 
 # --- Go toolchain -----------------------------------------------------------
 # The same split the Python toolchain uses: the compiler lives outside $HOME so
