@@ -106,6 +106,14 @@ ARG ARGUS_VERSION=0.3.6
 # scope restarts at every FROM, and the language blocks below need to read them.
 ARG INSTALL_GO
 ARG INSTALL_RUST
+# cargo-audit rides with the Rust toolchain. rustsec publishes no checksum list,
+# so each architecture's tarball digest is pinned here; see AGENTS.md for where
+# to read them on a bump.
+ARG CARGO_AUDIT_VERSION=0.22.2
+ARG CARGO_AUDIT_SHA256_AMD64=7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428
+ARG CARGO_AUDIT_SHA256_ARM64=c6603814ddaa45e51263dafd31c0ac98808f688d26f7395804f9670b0fd599dd
+# Set by BuildKit; the release downloads below pick their asset by it.
+ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -327,13 +335,32 @@ RUN if [ "${INSTALL_RUST}" = "true" ]; then \
         && chown -R "${USERNAME}:${USERGROUP}" /opt/rust; \
     fi
 
+# cargo-audit, so `cargo audit` works without `cargo install`, which compiles for
+# minutes and writes into the home volume. amd64 takes the static musl build:
+# the x86_64 glibc build needs glibc 2.39 and bookworm has 2.36. There is no
+# aarch64 musl build, and the aarch64 glibc one needs only 2.18.
+RUN if [ "${INSTALL_RUST}" = "true" ]; then \
+        case "${TARGETARCH}" in \
+            amd64) target=x86_64-unknown-linux-musl; sha="${CARGO_AUDIT_SHA256_AMD64}" ;; \
+            arm64) target=aarch64-unknown-linux-gnu; sha="${CARGO_AUDIT_SHA256_ARM64}" ;; \
+            *) echo "cargo-audit: no release asset for ${TARGETARCH}" >&2; exit 1 ;; \
+        esac \
+        && name="cargo-audit-${target}-v${CARGO_AUDIT_VERSION}" \
+        && tmp="$(mktemp -d)" \
+        && curl -fsSL -o "${tmp}/${name}.tgz" \
+            "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv${CARGO_AUDIT_VERSION}/${name}.tgz" \
+        && echo "${sha}  ${tmp}/${name}.tgz" | sha256sum -c - \
+        && tar -xzf "${tmp}/${name}.tgz" -C "${tmp}" "${name}/cargo-audit" \
+        && install -m 0755 "${tmp}/${name}/cargo-audit" /usr/local/bin/cargo-audit \
+        && rm -rf "${tmp}"; \
+    fi
+
 # --- Secret scanning --------------------------------------------------------
 # Commit hooks call gitleaks as a binary on PATH; without one, pre-commit's
 # stock gitleaks hook downloads a Go toolchain and compiles it on first use.
 # Fetched from the release and checked against its checksum list, as argus is
 # below. gitleaks also ships a container image, but the tarball is the artifact
 # ci.yml verifies, so a bump checks one checksum file for all three pins.
-ARG TARGETARCH
 RUN case "${TARGETARCH}" in \
         amd64) arch=x64 ;; \
         arm64) arch=arm64 ;; \

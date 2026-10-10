@@ -37,8 +37,8 @@ Five inputs converge on one final stage:
   want them never pulls them. Off by default; `full` and `full-argus` enable
   both.
 - **Verified release tarballs** — binaries downloaded by pinned release and
-  checked by SHA-256 before install: gitleaks in every variant, argus in
-  `full-argus`.
+  checked by SHA-256 before install: gitleaks in every variant, cargo-audit in
+  the two Rust variants, argus in `full-argus`.
 - **apt layer** — Debian packages for search, media, documents, VCS, build, and
   shell tooling, plus the GitHub CLI from its own apt repository.
 
@@ -97,6 +97,14 @@ finds neither that interpreter nor a `pre-commit` on `PATH`, and every commit
 fails. The baked copy in `/opt/uv/tools` gives the hook a stable interpreter. A
 Python project should still add pre-commit as a dev dependency and run its own
 locked copy through `uv run`.
+
+cargo-audit completes the dependency audits for the Rust variants: the only
+alternative, `cargo install cargo-audit`, compiles for minutes and lands in
+`~/.cargo`. The other audit tools are deliberately not baked. `npm audit` and
+`pnpm audit` ship with npm and pnpm; pip-audit runs as a project dev dependency
+or through `uvx` at a pinned version, and its environment (46 MB, pip included)
+is not worth carrying in every image; govulncheck runs with `go run` on a
+pinned module version, which the Go checksum database verifies.
 
 **Four variants, and `base` is the one that publishes as `latest`.** The ladder
 is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus the
@@ -472,8 +480,8 @@ of 2.1.295 / 0.162.0), ffmpeg's dependency tree 364 MB, the build-essential
 chain 231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB —
 pnpm 12 ships a self-contained native executable rather than JavaScript, so its
 npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
-21 MB static binary to every variant, and pre-commit's tool environment 18 MB.
-Only the group flags move the needle; trimming
+21 MB static binary to every variant, and pre-commit's tool environment 18 MB;
+cargo-audit adds 15 MB (13 MB on arm64) to the two Rust variants. Only the group flags move the needle; trimming
 individual utilities does not. `python3-dev`/`python3-venv` were dropped as
 redundant — `python3` resolves to uv's interpreter, so C extensions build
 against uv's headers, not Debian's 3.11 ones.
@@ -534,6 +542,20 @@ a home volume.
 `--profile minimal`. Both are added with `rustup component add` after the copy,
 followed by a `chown` so the runtime user can add more later. If a future bump
 appears to lose them, check whether the upstream profile changed.
+
+**cargo-audit's x86_64 glibc build does not run on bookworm.** It needs glibc
+2.39 and bookworm has 2.36, so amd64 installs the static
+`x86_64-unknown-linux-musl` build. There is no aarch64 musl build, and the
+`aarch64-unknown-linux-gnu` one needs only glibc 2.18. Re-check both on every
+bump with `strings cargo-audit | grep -oE 'GLIBC_[0-9.]+' | sort -V | tail -1`.
+rustsec publishes no checksum list, so the Dockerfile pins each tarball's
+SHA-256 itself. Compute them from the downloads and cross-check them against
+the digests GitHub records for the release assets
+(`gh api repos/rustsec/rustsec/releases/tags/cargo-audit/v<version>`, field
+`.assets[].digest`). Nothing bumps the version or the digests automatically.
+The advisory database is cloned into `$CARGO_HOME/advisory-db`, so like the
+registry cache it sits in `/opt/rust/cargo` and a home volume does not persist
+it; each new container fetches it again on its first audit.
 
 **The Go module cache is read-only, and one Go directory refuses to move.**
 Two quirks of `~/.go` worth knowing before debugging either. Go writes the

@@ -60,7 +60,7 @@ add_group "${INSTALL_SKILLS:-true}" "skills --version"
 add_group "${INSTALL_ARGUS:-false}" "argus-sidecar version"
 add_group "${INSTALL_GO:-false}" "go version" "gofmt -h"
 add_group "${INSTALL_RUST:-false}" "rustc --version" "cargo --version" \
-    "rustfmt --version" "clippy-driver --version"
+    "rustfmt --version" "clippy-driver --version" "cargo-audit --version"
 
 # The browser group installs shared libraries, not commands, so it is checked
 # against the linker cache rather than PATH. These are the names Chromium fails
@@ -314,6 +314,15 @@ if [[ "${INSTALL_RUST:-false}" == "true" ]]; then
         failed=$((failed + 1))
     fi
     rm -rf "${tmp}"
+
+    # Agents type `cargo audit`, not `cargo-audit`: cargo has to find the
+    # binary as an external subcommand, which is what this exercises.
+    if cargo audit --version >/dev/null 2>&1; then
+        printf 'ok    %-14s runs as a cargo subcommand\n' "cargo audit"
+    else
+        printf 'FAIL  %-14s cargo cannot dispatch to cargo-audit\n' "cargo audit"
+        failed=$((failed + 1))
+    fi
 fi
 
 if [[ "${INSTALL_BROWSER:-false}" == "true" ]]; then
