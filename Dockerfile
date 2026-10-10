@@ -117,6 +117,14 @@ ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# The official node image, Node 24 included, installs Yarn Classic next to npm.
+# pnpm is this image's package manager, and a stray `yarn` in a pnpm project
+# writes a second lockfile, so it goes; `corepack yarn` still runs the version a
+# project's `packageManager` field names. The files stay in the base layer, so
+# this saves no space, and the base's ENV YARN_VERSION cannot be unset. The node
+# images for Node 26 no longer ship yarn.
+RUN rm -rf /opt/yarn-v* /usr/local/bin/yarn /usr/local/bin/yarnpkg
+
 # Documentation is dead weight in an agent image; copyright files stay for
 # licence compliance. Must precede every apt install to take effect.
 RUN printf '%s\n' \

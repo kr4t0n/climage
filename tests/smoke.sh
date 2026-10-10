@@ -147,6 +147,17 @@ else
     failed=$((failed + 1))
 fi
 
+# Yarn Classic arrives with the node base image and the build removes it: a
+# stray `yarn` in a pnpm project writes a second lockfile. A base image that
+# moves it somewhere the removal does not reach fails here.
+if command -v yarn >/dev/null 2>&1 || command -v yarnpkg >/dev/null 2>&1; then
+    printf 'FAIL  %-14s %s is on PATH, expected no yarn\n' "yarn" \
+        "$(command -v yarn || command -v yarnpkg)"
+    failed=$((failed + 1))
+else
+    printf 'ok    %-14s absent (corepack yarn for projects that need it)\n' "yarn"
+fi
+
 # Go and Rust repeat the uv split: the toolchain sits outside $HOME so a mounted
 # home cannot hide it, while what `go install` / `cargo install` produce must
 # land under $HOME to survive a restart. Assert the second half, so moving

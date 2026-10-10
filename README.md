@@ -49,6 +49,11 @@ first use and runs it for that project only. `corepack`, which comes with
 Node.js, is also present but not enabled: `corepack pnpm` runs the
 `packageManager` version without needing shims on `PATH`.
 
+Yarn is not included. The official Node.js image ships Yarn Classic, and the
+build removes it so a stray `yarn` cannot write a second lockfile into a pnpm
+project. A project that uses Yarn runs it as `corepack yarn`, which fetches the
+version its `packageManager` field names.
+
 The default command adapts to how the container was started: a terminal gets an
 interactive shell, piped stdin is run as a script, and a container with neither
 (a Kubernetes pod, a detached container) parks so you can exec into it. Passing

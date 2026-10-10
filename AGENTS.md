@@ -183,6 +183,16 @@ root-owned `/usr/local/bin`, where the runtime user cannot write and where its
 later corepack runs the package's `bin/pnpm.mjs`, which downloads pnpm's native
 binary on first use into `~/.cache/node/corepack`.
 
+**Yarn is removed, not merely absent.** The official node image for Node 24
+installs Yarn Classic 1.22.22 into `/opt/yarn-v1.22.22`, with `yarn` and
+`yarnpkg` linked into `/usr/local/bin`. The build deletes all three because a
+stray `yarn` in a pnpm project writes a second lockfile, and points projects
+that need Yarn to `corepack yarn`. Deleting in a later layer saves no space,
+since the files remain in the base layer, and the base's `ENV
+YARN_VERSION=1.22.22` cannot be unset, so it lingers. The node images for
+Node 26 no longer install yarn; after that bump the `rm` is a no-op that can
+go, while the smoke test's yarn-absent check stays.
+
 **`tini` as PID 1.** Agent sessions spawn long chains of subprocesses. Without an
 init, orphaned children accumulate as zombies and signals do not propagate.
 
