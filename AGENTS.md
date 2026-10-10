@@ -82,29 +82,38 @@ pins by SHA-256, so baking that same artifact keeps a version bump to one
 checksum list. Its asset names say `x64` where Docker says `amd64`, so the build
 maps `TARGETARCH` explicitly; an architecture without a mapping fails the build.
 
-**Hook and audit tools no project can hold are baked in.** A repository's own
-lockfile is the right home for its linters and formatters, but some tools sit
-outside every manifest. gitleaks is a Go binary that commit hooks call from
-`PATH` — husky hooks run it directly, and pre-commit's `gitleaks-system` hook
-expects it — and without one, pre-commit's stock `gitleaks` hook downloads a Go
-toolchain from go.dev and compiles gitleaks into every fresh hook cache.
+**The image is the global layer: runtimes and launchers. Projects hold the
+rest.** The image pins what a project calls directly — node, uv, pnpm,
+pre-commit and gitleaks in every variant, plus Go, cargo and cargo-audit in
+`full` and `full-argus`. A project holds everything those launchers run, with
+its configuration and locks: Python tools as dev dependencies in `uv.lock`, run
+with `uv run`; frontend tools as devDependencies in its lockfile; Go tools as
+`tool` lines in `go.mod`, run with `go tool`; commit hooks pinned by `rev` in
+`.pre-commit-config.yaml`. A tool earns a place in the image by being a
+launcher, or by sitting outside every manifest.
 
-pre-commit itself is the same case for any repository that is not a Python
-project: there is no lockfile to pin it in. Running it through `uvx` works once,
-but `pre-commit install` records the interpreter it ran under in the git hook,
-and a uvx environment lives in uv's cache — after a `uv cache prune` the hook
-finds neither that interpreter nor a `pre-commit` on `PATH`, and every commit
-fails. The baked copy in `/opt/uv/tools` gives the hook a stable interpreter. A
-Python project should still add pre-commit as a dev dependency and run its own
-locked copy through `uv run`.
+gitleaks is a Go binary that commit hooks call from `PATH` — husky hooks run it
+directly, and pre-commit's `gitleaks-system` hook expects it — and without one,
+pre-commit's stock `gitleaks` hook downloads a Go toolchain from go.dev and
+compiles gitleaks into every fresh hook cache.
+
+pre-commit is the launcher for a project's hooks, so projects take it from the
+image rather than pin it, Python projects included. The project pins the hooks
+and states the oldest pre-commit it accepts with `minimum_pre_commit_version`.
+A repository with no Python code gains no `pyproject.toml` just to pin it. Never
+run it through `uvx`: `pre-commit install` records the interpreter it ran under
+in the git hook, and a uvx environment lives in uv's cache — after a `uv cache
+prune` the hook finds neither that interpreter nor a `pre-commit` on `PATH`, and
+every commit fails. The baked copy in `/opt/uv/tools` gives the hook a stable
+interpreter.
 
 cargo-audit completes the dependency audits for the Rust variants: the only
 alternative, `cargo install cargo-audit`, compiles for minutes and lands in
-`~/.cargo`. The other audit tools are deliberately not baked. `npm audit` and
-`pnpm audit` ship with npm and pnpm; pip-audit runs as a project dev dependency
-or through `uvx` at a pinned version, and its environment (46 MB, pip included)
-is not worth carrying in every image; govulncheck runs with `go run` on a
-pinned module version, which the Go checksum database verifies.
+`~/.cargo`. The other audit tools are deliberately not baked, because a project
+can hold them. `npm audit` and `pnpm audit` ship with npm and pnpm; pip-audit is
+a dev dependency, and its environment (46 MB, pip included) is not worth
+carrying in every image; govulncheck is a `tool` line in `go.mod`, which
+`go.sum` and the Go checksum database verify.
 
 **Four variants, and `base` is the one that publishes as `latest`.** The ladder
 is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus the
@@ -233,6 +242,10 @@ work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
   that needs more declares it, and every checkout sets
   `persist-credentials: false` because no job pushes to git.
 - Shell scripts are `bash` with `set -euo pipefail` and must pass `shellcheck`.
+- `.pre-commit-config.yaml` pins every hook by `rev` and sets
+  `minimum_pre_commit_version` to the highest `minimum_pre_commit_version` its
+  hooks declare in their own `.pre-commit-hooks.yaml` at that `rev`. A `rev`
+  bump re-checks it.
 
 ## Gotchas
 
@@ -475,7 +488,7 @@ variants table is the registry figure, and it comes from Docker Hub, not from
 against a README that lists 2.0 GB uncompressed and 698 MB compressed.
 
 Measured on amd64 in CI, the four variants are 1.5 GB (`slim`), 2.1 GB
-(`base`), and 2.9 GB for both `full` and `full-argus`; arm64 runs 0.1–0.2 GB
+(`base`), and 3.0 GB for both `full` and `full-argus`; arm64 runs 0.1–0.2 GB
 smaller across the board.
 
 The CI figure is rounded *up* — `numfmt --to=iec` rounds away from zero, so

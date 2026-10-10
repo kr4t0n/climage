@@ -1,3 +1,8 @@
+# The highest minimum any pinned hook declares: end-of-file-fixer and
+# trailing-whitespace at pre-commit-hooks v5.0.0 need 3.2.0. Re-check on every
+# rev bump.
+minimum_pre_commit_version: "3.2.0"
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
