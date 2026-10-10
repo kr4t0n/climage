@@ -23,6 +23,7 @@ REQUIRED=(
     "git --version"
     "git-lfs --version"
     "gh --version"
+    "gitleaks version"
     "curl --version"
     "wget --version"
     "rsync --version"

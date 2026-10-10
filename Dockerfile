@@ -8,6 +8,7 @@
 #   go + rust        -> optional compiled-language toolchains, copied from the
 #                       official images; both `full` variants turn them on
 #   apt layer        -> search/media/build tooling agents shell out to
+#   gitleaks         -> secret scanner for commit hooks, from a verified release
 #
 # All versions are build args so they can be pinned per build and bumped by
 # Dependabot in one place. See README.md for the supported matrix.
@@ -81,6 +82,9 @@ ARG CODEX_VERSION=0.162.0
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.7.0
 ARG PNPM_VERSION=12.10.1
+# The same release ci.yml scans with and the gitleaks hook in
+# .pre-commit-config.yaml builds; the three pins move together.
+ARG GITLEAKS_VERSION=8.30.1
 # Heavyweight package groups, measured: media pulls 172 packages / ~409 MB
 # (ffmpeg alone drags in LLVM, mesa GL drivers and a speech synthesiser), build
 # tools another ~231 MB. Both default on; turn either off for a slim variant.
@@ -308,6 +312,31 @@ RUN if [ "${INSTALL_RUST}" = "true" ]; then \
         && chown -R "${USERNAME}:${USERGROUP}" /opt/rust; \
     fi
 
+# --- Secret scanning --------------------------------------------------------
+# Commit hooks call gitleaks as a binary on PATH; without one, pre-commit's
+# stock gitleaks hook downloads a Go toolchain and compiles it on first use.
+# Fetched from the release and checked against its checksum list, as argus is
+# below. gitleaks also ships a container image, but the tarball is the artifact
+# ci.yml verifies, so a bump checks one checksum file for all three pins.
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+        amd64) arch=x64 ;; \
+        arm64) arch=arm64 ;; \
+        *) echo "gitleaks: no release asset for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}" \
+    && asset="gitleaks_${GITLEAKS_VERSION}_linux_${arch}.tar.gz" \
+    && tmp="$(mktemp -d)" \
+    && curl -fsSL "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" -o "${tmp}/checksums.txt" \
+    && curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}" \
+    # Same guard as argus: an asset missing from the list yields an empty
+    # check list, which sha256sum rejects.
+    && awk -v a="${asset}" -v d="${tmp}" '$2 == a { print $1 "  " d "/" a }' \
+         "${tmp}/checksums.txt" | sha256sum -c - \
+    && tar -xzf "${tmp}/${asset}" -C "${tmp}" gitleaks \
+    && install -m 0755 "${tmp}/gitleaks" /usr/local/bin/gitleaks \
+    && rm -rf "${tmp}"
+
 # --- pnpm -------------------------------------------------------------------
 # Installed as root into /usr/local, like the agent CLIs, so a home volume
 # cannot hide it. A project's `packageManager` field still wins: pnpm fetches
@@ -351,7 +380,6 @@ RUN if [ "${INSTALL_CODEX}" = "true" ]; then \
 # mutable branch. This performs the same SHA-256 check against a pinned tag.
 # One binary since 0.3.6, which dropped argus-bg along with the background-task
 # progress extension it served.
-ARG TARGETARCH
 RUN if [ "${INSTALL_ARGUS}" = "true" ]; then \
         base="https://github.com/kr4t0n/argus/releases/download/argus-sidecar-v${ARGUS_VERSION}" \
         && asset="argus-sidecar-linux-${TARGETARCH}" \

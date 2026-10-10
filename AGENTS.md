@@ -19,10 +19,11 @@ ghcr.io/astral-sh/ruff:${RUFF_VERSION}  ─┤
 golang:${GO_VERSION}-${DEBIAN_SUITE}    ─┤  (conditional stages)
 rust:${RUST_VERSION}-${DEBIAN_SUITE}    ─┤
                                          ├─> node:${NODE_VERSION}-${DEBIAN_SUITE}-slim
+verified release tarballs               ─┤
 apt layer (agent tooling)               ─┘        └─> USER climage, WORKDIR /workspace
 ```
 
-Four inputs converge on one final stage:
+Five inputs converge on one final stage:
 
 - **Base image** — the official Node.js slim image. It provides the JS runtime,
   npm, and a pre-existing unprivileged `node` user at uid/gid 1000, which the
@@ -35,6 +36,9 @@ Four inputs converge on one final stage:
   rather than installed, and selected by a stage alias so a build that does not
   want them never pulls them. Off by default; `full` and `full-argus` enable
   both.
+- **Verified release tarballs** — binaries downloaded by pinned release and
+  checked by SHA-256 before install: gitleaks in every variant, argus in
+  `full-argus`.
 - **apt layer** — Debian packages for search, media, documents, VCS, build, and
   shell tooling, plus the GitHub CLI from its own apt repository.
 
@@ -62,7 +66,7 @@ edit, and there is exactly one place to bump.
 
 **Binary copy over installer scripts.** `COPY --from` on a pinned image tag is
 reproducible and auditable; piping a remote script into a shell is neither.
-argus has no distribution image, so it is the one component fetched over HTTP —
+argus has no distribution image, so it is fetched over HTTP instead —
 but by pinned release tag, verified against the release's own `SHASUMS256.txt`,
 rather than through its `curl … | sh` installer. The installer does check the
 same hashes; what it does not do is pin, and its "newest release" scan does not
@@ -71,6 +75,19 @@ itself is also served from a mutable branch. The set of binaries a release ships
 is not stable either — 0.3.6 dropped `argus-bg` — so a bump means checking the
 release's asset list, not just the tag: a stale name 404s the build. Adding a
 second first-party tool should follow the same shape.
+
+gitleaks takes the same shape for a different reason. It does publish a
+container image, but its release tarball is the artifact `ci.yml` downloads and
+pins by SHA-256, so baking that same artifact keeps a version bump to one
+checksum list. Its asset names say `x64` where Docker says `amd64`, so the build
+maps `TARGETARCH` explicitly; an architecture without a mapping fails the build.
+
+**Hook and audit tools no project can hold are baked in.** A repository's own
+lockfile is the right home for its linters and formatters, but some tools sit
+outside every manifest. gitleaks is a Go binary that commit hooks call from
+`PATH` — husky hooks run it directly, and pre-commit's `gitleaks-system` hook
+expects it — and without one, pre-commit's stock `gitleaks` hook downloads a Go
+toolchain from go.dev and compiles gitleaks into every fresh hook cache.
 
 **Four variants, and `base` is the one that publishes as `latest`.** The ladder
 is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus the
@@ -444,7 +461,8 @@ agent CLIs ~680 MB of native binaries (Claude Code 245 MB and Codex 432 MB as
 of 2.1.295 / 0.162.0), ffmpeg's dependency tree 364 MB, the build-essential
 chain 231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB —
 pnpm 12 ships a self-contained native executable rather than JavaScript, so its
-npm-registry size (4 MB) badly understates what lands on disk. Only the group flags move the needle; trimming
+npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
+21 MB static binary to every variant. Only the group flags move the needle; trimming
 individual utilities does not. `python3-dev`/`python3-venv` were dropped as
 redundant — `python3` resolves to uv's interpreter, so C extensions build
 against uv's headers, not Debian's 3.11 ones.
@@ -598,9 +616,11 @@ also stops the publish on `main`. A real finding means rotating the secret;
 scrubbing it from history rewrites a published branch. A false positive goes in
 `.gitleaks.toml` (with `[extend] useDefault = true`, or it replaces the default
 rules) or as a fingerprint in `.gitleaksignore`; gitleaks reads both from the
-repository root, in CI and in the hook. The version is pinned twice, as
-`GITLEAKS_VERSION` plus the tarball's `GITLEAKS_SHA256` in the workflow and as
-the hook's `rev`, and nothing bumps either automatically, so move them together.
+repository root, in CI and in the hook. The version is pinned in three places:
+`GITLEAKS_VERSION` plus the tarball's `GITLEAKS_SHA256` in the workflow, the
+hook's `rev`, and the Dockerfile's `GITLEAKS_VERSION`, which bakes the same
+release into the image. Nothing bumps any of them automatically, so move them
+together.
 
 **The `hadolint-docker` pre-commit hook ignores its `rev`.** Upstream's hook
 entry is the bare `ghcr.io/hadolint/hadolint`, so it runs whatever `latest` is,
