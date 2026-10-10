@@ -9,11 +9,13 @@ REQUIRED=(
     "npm --version"
     "npx --version"
     "pnpm --version"
+    "corepack --version"
     "python --version"
     "python3 --version"
     "uv --version"
     "uvx --version"
     "ruff --version"
+    "pre-commit --version"
     "rg --version"
     "fd --version"
     "bat --version"
@@ -23,6 +25,7 @@ REQUIRED=(
     "git --version"
     "git-lfs --version"
     "gh --version"
+    "gitleaks version"
     "curl --version"
     "wget --version"
     "rsync --version"
@@ -58,7 +61,7 @@ add_group "${INSTALL_SKILLS:-true}" "skills --version"
 add_group "${INSTALL_ARGUS:-false}" "argus-sidecar version"
 add_group "${INSTALL_GO:-false}" "go version" "gofmt -h"
 add_group "${INSTALL_RUST:-false}" "rustc --version" "cargo --version" \
-    "rustfmt --version" "clippy-driver --version"
+    "rustfmt --version" "clippy-driver --version" "cargo-audit --version"
 
 # The browser group installs shared libraries, not commands, so it is checked
 # against the linker cache rather than PATH. These are the names Chromium fails
@@ -131,6 +134,28 @@ if [[ "${UV_TOOL_DIR:-}" == "${HOME}/"* && "${tool_bin}" == "${HOME}/"* ]]; then
 else
     printf 'FAIL  %-14s %s must live under %s\n' "uv tool dir" "${UV_TOOL_DIR:-<unset>}" "${HOME}"
     failed=$((failed + 1))
+fi
+
+# pre-commit is baked into /opt/uv/bin rather than the uv tool dir under $HOME,
+# so a volume mounted over the home directory cannot hide it.
+precommit_path=$(command -v pre-commit 2>/dev/null || true)
+if [[ "${precommit_path}" == /opt/uv/bin/pre-commit ]]; then
+    printf 'ok    %-14s %s, outside %s\n' "pre-commit dir" "${precommit_path}" "${HOME}"
+else
+    printf 'FAIL  %-14s resolves to %s, expected /opt/uv/bin/pre-commit\n' \
+        "pre-commit dir" "${precommit_path:-<none>}"
+    failed=$((failed + 1))
+fi
+
+# Yarn Classic arrives with the node base image and the build removes it: a
+# stray `yarn` in a pnpm project writes a second lockfile. A base image that
+# moves it somewhere the removal does not reach fails here.
+if command -v yarn >/dev/null 2>&1 || command -v yarnpkg >/dev/null 2>&1; then
+    printf 'FAIL  %-14s %s is on PATH, expected no yarn\n' "yarn" \
+        "$(command -v yarn || command -v yarnpkg)"
+    failed=$((failed + 1))
+else
+    printf 'ok    %-14s absent (corepack yarn for projects that need it)\n' "yarn"
 fi
 
 # Go and Rust repeat the uv split: the toolchain sits outside $HOME so a mounted
@@ -301,6 +326,15 @@ if [[ "${INSTALL_RUST:-false}" == "true" ]]; then
         failed=$((failed + 1))
     fi
     rm -rf "${tmp}"
+
+    # Agents type `cargo audit`, not `cargo-audit`: cargo has to find the
+    # binary as an external subcommand, which is what this exercises.
+    if cargo audit --version >/dev/null 2>&1; then
+        printf 'ok    %-14s runs as a cargo subcommand\n' "cargo audit"
+    else
+        printf 'FAIL  %-14s cargo cannot dispatch to cargo-audit\n' "cargo audit"
+        failed=$((failed + 1))
+    fi
 fi
 
 if [[ "${INSTALL_BROWSER:-false}" == "true" ]]; then

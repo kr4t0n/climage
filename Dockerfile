@@ -4,10 +4,12 @@
 #
 # Layout:
 #   node (official)  -> JS/TS runtime + npm/npx, plus a pinned pnpm
-#   uv + ruff        -> Python toolchain, copied from Astral's release images
+#   uv + ruff        -> Python toolchain, copied from Astral's release images,
+#                       plus pre-commit baked in as a uv tool
 #   go + rust        -> optional compiled-language toolchains, copied from the
 #                       official images; both `full` variants turn them on
 #   apt layer        -> search/media/build tooling agents shell out to
+#   gitleaks         -> secret scanner for commit hooks, from a verified release
 #
 # All versions are build args so they can be pinned per build and bumped by
 # Dependabot in one place. See README.md for the supported matrix.
@@ -81,6 +83,10 @@ ARG CODEX_VERSION=0.162.0
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.7.0
 ARG PNPM_VERSION=12.10.1
+ARG PRE_COMMIT_VERSION=4.6.2
+# The same release ci.yml scans with and the gitleaks hook in
+# .pre-commit-config.yaml builds; the three pins move together.
+ARG GITLEAKS_VERSION=8.30.1
 # Heavyweight package groups, measured: media pulls 172 packages / ~409 MB
 # (ffmpeg alone drags in LLVM, mesa GL drivers and a speech synthesiser), build
 # tools another ~231 MB. Both default on; turn either off for a slim variant.
@@ -100,8 +106,24 @@ ARG ARGUS_VERSION=0.3.6
 # scope restarts at every FROM, and the language blocks below need to read them.
 ARG INSTALL_GO
 ARG INSTALL_RUST
+# cargo-audit rides with the Rust toolchain. rustsec publishes no checksum list,
+# so each architecture's tarball digest is pinned here; see AGENTS.md for where
+# to read them on a bump.
+ARG CARGO_AUDIT_VERSION=0.22.2
+ARG CARGO_AUDIT_SHA256_AMD64=7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428
+ARG CARGO_AUDIT_SHA256_ARM64=c6603814ddaa45e51263dafd31c0ac98808f688d26f7395804f9670b0fd599dd
+# Set by BuildKit; the release downloads below pick their asset by it.
+ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+# The official node image, Node 24 included, installs Yarn Classic next to npm.
+# pnpm is this image's package manager, and a stray `yarn` in a pnpm project
+# writes a second lockfile, so it goes; `corepack yarn` still runs the version a
+# project's `packageManager` field names. The files stay in the base layer, so
+# this saves no space, and the base's ENV YARN_VERSION cannot be unset. The node
+# images for Node 26 no longer ship yarn.
+RUN rm -rf /opt/yarn-v* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 
 # Documentation is dead weight in an agent image; copyright files stay for
 # licence compliance. Must precede every apt install to take effect.
@@ -257,12 +279,25 @@ RUN uv python install "${PYTHON_VERSION}" \
     # comes first on PATH, so `python`/`python3` mean the pinned interpreter.
     && ln -sfn "$(uv python find "${PYTHON_VERSION}")" /usr/local/bin/python3 \
     && ln -sfn "$(uv python find "${PYTHON_VERSION}")" /usr/local/bin/python \
-    # Kept for derived images that point UV_TOOL_DIR/UV_TOOL_BIN_DIR back here to
-    # bake tools into a layer; /opt/uv/bin stays on PATH so that is a one-line
-    # ENV override with no PATH surgery.
+    # Tools baked into a layer live here, out of reach of a home volume: this
+    # image's own pre-commit below, and anything a derived image adds by
+    # pointing UV_TOOL_DIR/UV_TOOL_BIN_DIR back here. /opt/uv/bin stays on
+    # PATH, so that is a one-line ENV override with no PATH surgery.
     && mkdir -p /opt/uv/tools /opt/uv/bin \
     && chown -R "${USERNAME}:${USERGROUP}" /opt/uv \
     && chmod -R a+rX /opt/uv
+
+# pre-commit for repositories that are not Python projects and so have no
+# lockfile to pin it in; a Python project still runs its own locked copy with
+# `uv run pre-commit`. Built against the pinned interpreter, and in /opt/uv
+# rather than $HOME, so the hook script `pre-commit install` writes keeps
+# pointing at an interpreter that exists — unlike one installed through uvx,
+# whose environment lives in a prunable cache.
+RUN UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/opt/uv/bin \
+        uv tool install --no-cache --python "${PYTHON_VERSION}" \
+        "pre-commit==${PRE_COMMIT_VERSION}" \
+    && chown -R "${USERNAME}:${USERGROUP}" /opt/uv/tools /opt/uv/bin \
+    && chmod -R a+rX /opt/uv/tools /opt/uv/bin
 
 # --- Go toolchain -----------------------------------------------------------
 # The same split the Python toolchain uses: the compiler lives outside $HOME so
@@ -308,6 +343,50 @@ RUN if [ "${INSTALL_RUST}" = "true" ]; then \
         && chown -R "${USERNAME}:${USERGROUP}" /opt/rust; \
     fi
 
+# cargo-audit, so `cargo audit` works without `cargo install`, which compiles for
+# minutes and writes into the home volume. amd64 takes the static musl build:
+# the x86_64 glibc build needs glibc 2.39 and bookworm has 2.36. There is no
+# aarch64 musl build, and the aarch64 glibc one needs only 2.18.
+RUN if [ "${INSTALL_RUST}" = "true" ]; then \
+        case "${TARGETARCH}" in \
+            amd64) target=x86_64-unknown-linux-musl; sha="${CARGO_AUDIT_SHA256_AMD64}" ;; \
+            arm64) target=aarch64-unknown-linux-gnu; sha="${CARGO_AUDIT_SHA256_ARM64}" ;; \
+            *) echo "cargo-audit: no release asset for ${TARGETARCH}" >&2; exit 1 ;; \
+        esac \
+        && name="cargo-audit-${target}-v${CARGO_AUDIT_VERSION}" \
+        && tmp="$(mktemp -d)" \
+        && curl -fsSL -o "${tmp}/${name}.tgz" \
+            "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv${CARGO_AUDIT_VERSION}/${name}.tgz" \
+        && echo "${sha}  ${tmp}/${name}.tgz" | sha256sum -c - \
+        && tar -xzf "${tmp}/${name}.tgz" -C "${tmp}" "${name}/cargo-audit" \
+        && install -m 0755 "${tmp}/${name}/cargo-audit" /usr/local/bin/cargo-audit \
+        && rm -rf "${tmp}"; \
+    fi
+
+# --- Secret scanning --------------------------------------------------------
+# Commit hooks call gitleaks as a binary on PATH; without one, pre-commit's
+# stock gitleaks hook downloads a Go toolchain and compiles it on first use.
+# Fetched from the release and checked against its checksum list, as argus is
+# below. gitleaks also ships a container image, but the tarball is the artifact
+# ci.yml verifies, so a bump checks one checksum file for all three pins.
+RUN case "${TARGETARCH}" in \
+        amd64) arch=x64 ;; \
+        arm64) arch=arm64 ;; \
+        *) echo "gitleaks: no release asset for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}" \
+    && asset="gitleaks_${GITLEAKS_VERSION}_linux_${arch}.tar.gz" \
+    && tmp="$(mktemp -d)" \
+    && curl -fsSL "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" -o "${tmp}/checksums.txt" \
+    && curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}" \
+    # Same guard as argus: an asset missing from the list yields an empty
+    # check list, which sha256sum rejects.
+    && awk -v a="${asset}" -v d="${tmp}" '$2 == a { print $1 "  " d "/" a }' \
+         "${tmp}/checksums.txt" | sha256sum -c - \
+    && tar -xzf "${tmp}/${asset}" -C "${tmp}" gitleaks \
+    && install -m 0755 "${tmp}/gitleaks" /usr/local/bin/gitleaks \
+    && rm -rf "${tmp}"
+
 # --- pnpm -------------------------------------------------------------------
 # Installed as root into /usr/local, like the agent CLIs, so a home volume
 # cannot hide it. A project's `packageManager` field still wins: pnpm fetches
@@ -351,7 +430,6 @@ RUN if [ "${INSTALL_CODEX}" = "true" ]; then \
 # mutable branch. This performs the same SHA-256 check against a pinned tag.
 # One binary since 0.3.6, which dropped argus-bg along with the background-task
 # progress extension it served.
-ARG TARGETARCH
 RUN if [ "${INSTALL_ARGUS}" = "true" ]; then \
         base="https://github.com/kr4t0n/argus/releases/download/argus-sidecar-v${ARGUS_VERSION}" \
         && asset="argus-sidecar-linux-${TARGETARCH}" \

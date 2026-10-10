@@ -16,13 +16,14 @@ it to Docker Hub. There is no application code.
 
 | Area | Tools |
 | --- | --- |
-| Runtimes | `node`, `npm`, `npx`, `pnpm`, `python3` (Debian), uv-managed CPython |
+| Runtimes | `node`, `npm`, `npx`, `pnpm`, `corepack`, `python3` (Debian), uv-managed CPython |
 | Python toolchain | `uv`, `uvx`, `ruff` |
 | Go toolchain | `go`, `gofmt` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
-| Rust toolchain | `rustc`, `cargo`, `rustup`, `clippy`, `rustfmt` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
+| Rust toolchain | `rustc`, `cargo`, `rustup`, `clippy`, `rustfmt`, `cargo audit` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
 | Search & text | `rg` (ripgrep), `fd`, `bat`, `jq`, `tree`, `file`, `less`, `diff`, `patch`, `moreutils` |
 | Media & documents | `ffmpeg`, `ffprobe`, `convert` (ImageMagick), `pdftotext` (poppler) |
 | VCS & network | `git`, `git-lfs`, `gh`, `ssh`, `curl`, `wget`, `rsync`, `dig`, `ping`, `nc`, `socat` |
+| Secrets & hooks | `gitleaks`, `pre-commit` |
 | Data | `sqlite3` |
 | Build | `build-essential` (`gcc`, `make`), `pkg-config` |
 | Shell & process | `bash`, `tmux`, `vim.tiny`, `htop`, `procps`, `shellcheck`, `tini` |
@@ -44,7 +45,14 @@ and login shells, and all write under `$HOME` — so a volume mounted at
 
 `pnpm` is pinned like everything else, but a project whose `package.json` names
 a version in its `packageManager` field gets that version: pnpm fetches it on
-first use and runs it for that project only.
+first use and runs it for that project only. `corepack`, which comes with
+Node.js, is also present but not enabled: `corepack pnpm` runs the
+`packageManager` version without needing shims on `PATH`.
+
+Yarn is not included. The official Node.js image ships Yarn Classic, and the
+build removes it so a stray `yarn` cannot write a second lockfile into a pnpm
+project. A project that uses Yarn runs it as `corepack yarn`, which fetches the
+version its `packageManager` field names.
 
 The default command adapts to how the container was started: a terminal gets an
 interactive shell, piped stdin is run as a script, and a container with neither
@@ -212,11 +220,15 @@ agent permissions, so review a source before installing it.
 | `GO_VERSION` | `1.27` | Go minor version (official image tag) |
 | `INSTALL_RUST` | `false` | Rust toolchain, copied from the official `rust` image; on in both `full` variants. Requires `INSTALL_BUILD_TOOLS=true` for a working linker. Must be exactly `true` or `false` |
 | `RUST_VERSION` | `1.98` | Rust version (official image tag) |
+| `CARGO_AUDIT_VERSION` | `0.22.2` | Exact [cargo-audit](https://github.com/rustsec/rustsec/tree/main/cargo-audit) release, installed only with `INSTALL_RUST=true` |
+| `CARGO_AUDIT_SHA256_AMD64`, `CARGO_AUDIT_SHA256_ARM64` | release digests | SHA-256 of each architecture's cargo-audit tarball; upstream publishes no checksum list, so the pins live here |
 | `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar`; on only in the `full-argus` variant |
 | `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in both `full` variants — ~18 MB, since the media group already provides most of the chain |
 | `ARGUS_VERSION` | `0.3.6` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
 | `SKILLS_VERSION` | `1.7.0` | Exact [skills](https://github.com/vercel-labs/skills) version |
 | `PNPM_VERSION` | `12.10.1` | Exact [pnpm](https://pnpm.io) version (npm `latest`); a project's `packageManager` field still selects its own |
+| `PRE_COMMIT_VERSION` | `4.6.2` | Exact [pre-commit](https://pre-commit.com) version, installed as a uv tool under `/opt/uv` |
+| `GITLEAKS_VERSION` | `8.30.1` | Exact [gitleaks](https://github.com/gitleaks/gitleaks) release, verified against its checksum list; the same version CI scans with |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
 
 ### Runtime environment variables

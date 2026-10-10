@@ -19,10 +19,11 @@ ghcr.io/astral-sh/ruff:${RUFF_VERSION}  ─┤
 golang:${GO_VERSION}-${DEBIAN_SUITE}    ─┤  (conditional stages)
 rust:${RUST_VERSION}-${DEBIAN_SUITE}    ─┤
                                          ├─> node:${NODE_VERSION}-${DEBIAN_SUITE}-slim
+verified release tarballs               ─┤
 apt layer (agent tooling)               ─┘        └─> USER climage, WORKDIR /workspace
 ```
 
-Four inputs converge on one final stage:
+Five inputs converge on one final stage:
 
 - **Base image** — the official Node.js slim image. It provides the JS runtime,
   npm, and a pre-existing unprivileged `node` user at uid/gid 1000, which the
@@ -35,6 +36,9 @@ Four inputs converge on one final stage:
   rather than installed, and selected by a stage alias so a build that does not
   want them never pulls them. Off by default; `full` and `full-argus` enable
   both.
+- **Verified release tarballs** — binaries downloaded by pinned release and
+  checked by SHA-256 before install: gitleaks in every variant, cargo-audit in
+  the two Rust variants, argus in `full-argus`.
 - **apt layer** — Debian packages for search, media, documents, VCS, build, and
   shell tooling, plus the GitHub CLI from its own apt repository.
 
@@ -62,7 +66,7 @@ edit, and there is exactly one place to bump.
 
 **Binary copy over installer scripts.** `COPY --from` on a pinned image tag is
 reproducible and auditable; piping a remote script into a shell is neither.
-argus has no distribution image, so it is the one component fetched over HTTP —
+argus has no distribution image, so it is fetched over HTTP instead —
 but by pinned release tag, verified against the release's own `SHASUMS256.txt`,
 rather than through its `curl … | sh` installer. The installer does check the
 same hashes; what it does not do is pin, and its "newest release" scan does not
@@ -71,6 +75,36 @@ itself is also served from a mutable branch. The set of binaries a release ships
 is not stable either — 0.3.6 dropped `argus-bg` — so a bump means checking the
 release's asset list, not just the tag: a stale name 404s the build. Adding a
 second first-party tool should follow the same shape.
+
+gitleaks takes the same shape for a different reason. It does publish a
+container image, but its release tarball is the artifact `ci.yml` downloads and
+pins by SHA-256, so baking that same artifact keeps a version bump to one
+checksum list. Its asset names say `x64` where Docker says `amd64`, so the build
+maps `TARGETARCH` explicitly; an architecture without a mapping fails the build.
+
+**Hook and audit tools no project can hold are baked in.** A repository's own
+lockfile is the right home for its linters and formatters, but some tools sit
+outside every manifest. gitleaks is a Go binary that commit hooks call from
+`PATH` — husky hooks run it directly, and pre-commit's `gitleaks-system` hook
+expects it — and without one, pre-commit's stock `gitleaks` hook downloads a Go
+toolchain from go.dev and compiles gitleaks into every fresh hook cache.
+
+pre-commit itself is the same case for any repository that is not a Python
+project: there is no lockfile to pin it in. Running it through `uvx` works once,
+but `pre-commit install` records the interpreter it ran under in the git hook,
+and a uvx environment lives in uv's cache — after a `uv cache prune` the hook
+finds neither that interpreter nor a `pre-commit` on `PATH`, and every commit
+fails. The baked copy in `/opt/uv/tools` gives the hook a stable interpreter. A
+Python project should still add pre-commit as a dev dependency and run its own
+locked copy through `uv run`.
+
+cargo-audit completes the dependency audits for the Rust variants: the only
+alternative, `cargo install cargo-audit`, compiles for minutes and lands in
+`~/.cargo`. The other audit tools are deliberately not baked. `npm audit` and
+`pnpm audit` ship with npm and pnpm; pip-audit runs as a project dev dependency
+or through `uvx` at a pinned version, and its environment (46 MB, pip included)
+is not worth carrying in every image; govulncheck runs with `go run` on a
+pinned module version, which the Go checksum database verifies.
 
 **Four variants, and `base` is the one that publishes as `latest`.** The ladder
 is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus the
@@ -112,7 +146,8 @@ still be there after a pod restart, which only happens if they land on that same
 volume — so `UV_TOOL_DIR`/`UV_TOOL_BIN_DIR` point into `/home/climage/.uv`.
 `/opt/uv` stays `chown`ed to the runtime user and `/opt/uv/bin` stays on `PATH`,
 so a derived image that wants tools in a layer instead of on a volume overrides
-the two vars and needs no `PATH` change.
+the two vars and needs no `PATH` change. The image does exactly that for its own
+pre-commit, setting the two vars for that one `RUN` only.
 
 Go and Rust follow the same rule, and it is the rule to apply to any language
 added later. Toolchain outside `$HOME` (`/usr/local/go`, `/opt/rust`), runtime
@@ -138,6 +173,25 @@ split: the pinned `pnpm` itself is installed as root into `/usr/local` with the
 agent CLIs, while `PNPM_HOME=/home/climage/.local/share/pnpm` — pnpm's own
 default location, and where its content-addressed store already lives — takes
 `pnpm add -g` installs, with `$PNPM_HOME/bin` on `PATH`.
+
+corepack ships inside the Node.js distribution, so its version follows the base
+image rather than a pin here (0.36.0 with Node 24.21.0). It is deliberately not
+enabled: `corepack enable` writes its shims next to the `corepack` binary, into
+root-owned `/usr/local/bin`, where the runtime user cannot write and where its
+`pnpm` shim would take the path the pinned `pnpm` already occupies.
+`corepack pnpm` needs no shims. For pnpm 11 and
+later corepack runs the package's `bin/pnpm.mjs`, which downloads pnpm's native
+binary on first use into `~/.cache/node/corepack`.
+
+**Yarn is removed, not merely absent.** The official node image for Node 24
+installs Yarn Classic 1.22.22 into `/opt/yarn-v1.22.22`, with `yarn` and
+`yarnpkg` linked into `/usr/local/bin`. The build deletes all three because a
+stray `yarn` in a pnpm project writes a second lockfile, and points projects
+that need Yarn to `corepack yarn`. Deleting in a later layer saves no space,
+since the files remain in the base layer, and the base's `ENV
+YARN_VERSION=1.22.22` cannot be unset, so it lingers. The node images for
+Node 26 no longer install yarn; after that bump the `rm` is a no-op that can
+go, while the smoke test's yarn-absent check stays.
 
 **`tini` as PID 1.** Agent sessions spawn long chains of subprocesses. Without an
 init, orphaned children accumulate as zombies and signals do not propagate.
@@ -444,7 +498,9 @@ agent CLIs ~680 MB of native binaries (Claude Code 245 MB and Codex 432 MB as
 of 2.1.295 / 0.162.0), ffmpeg's dependency tree 364 MB, the build-essential
 chain 231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB —
 pnpm 12 ships a self-contained native executable rather than JavaScript, so its
-npm-registry size (4 MB) badly understates what lands on disk. Only the group flags move the needle; trimming
+npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
+21 MB static binary to every variant, and pre-commit's tool environment 18 MB;
+cargo-audit adds 15 MB (13 MB on arm64) to the two Rust variants. Only the group flags move the needle; trimming
 individual utilities does not. `python3-dev`/`python3-venv` were dropped as
 redundant — `python3` resolves to uv's interpreter, so C extensions build
 against uv's headers, not Debian's 3.11 ones.
@@ -505,6 +561,20 @@ a home volume.
 `--profile minimal`. Both are added with `rustup component add` after the copy,
 followed by a `chown` so the runtime user can add more later. If a future bump
 appears to lose them, check whether the upstream profile changed.
+
+**cargo-audit's x86_64 glibc build does not run on bookworm.** It needs glibc
+2.39 and bookworm has 2.36, so amd64 installs the static
+`x86_64-unknown-linux-musl` build. There is no aarch64 musl build, and the
+`aarch64-unknown-linux-gnu` one needs only glibc 2.18. Re-check both on every
+bump with `strings cargo-audit | grep -oE 'GLIBC_[0-9.]+' | sort -V | tail -1`.
+rustsec publishes no checksum list, so the Dockerfile pins each tarball's
+SHA-256 itself. Compute them from the downloads and cross-check them against
+the digests GitHub records for the release assets
+(`gh api repos/rustsec/rustsec/releases/tags/cargo-audit/v<version>`, field
+`.assets[].digest`). Nothing bumps the version or the digests automatically.
+The advisory database is cloned into `$CARGO_HOME/advisory-db`, so like the
+registry cache it sits in `/opt/rust/cargo` and a home volume does not persist
+it; each new container fetches it again on its first audit.
 
 **The Go module cache is read-only, and one Go directory refuses to move.**
 Two quirks of `~/.go` worth knowing before debugging either. Go writes the
@@ -598,9 +668,11 @@ also stops the publish on `main`. A real finding means rotating the secret;
 scrubbing it from history rewrites a published branch. A false positive goes in
 `.gitleaks.toml` (with `[extend] useDefault = true`, or it replaces the default
 rules) or as a fingerprint in `.gitleaksignore`; gitleaks reads both from the
-repository root, in CI and in the hook. The version is pinned twice, as
-`GITLEAKS_VERSION` plus the tarball's `GITLEAKS_SHA256` in the workflow and as
-the hook's `rev`, and nothing bumps either automatically, so move them together.
+repository root, in CI and in the hook. The version is pinned in three places:
+`GITLEAKS_VERSION` plus the tarball's `GITLEAKS_SHA256` in the workflow, the
+hook's `rev`, and the Dockerfile's `GITLEAKS_VERSION`, which bakes the same
+release into the image. Nothing bumps any of them automatically, so move them
+together.
 
 **The `hadolint-docker` pre-commit hook ignores its `rev`.** Upstream's hook
 entry is the bare `ghcr.io/hadolint/hadolint`, so it runs whatever `latest` is,
