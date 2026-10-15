@@ -81,20 +81,21 @@ docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=fal
 Claude Code and Codex can each replace themselves with a newer release than the
 image pins. Run as the `climage` user, an update lands under `$HOME`: on a home
 volume it outlives the container, and it keeps shadowing the pinned copy in
-every later image. The image turns off the updates that run unattended and
-leaves the ones a person starts.
+every later image. The image turns off every update that starts without being
+asked for, and leaves the update commands a person runs by hand.
 
 | | Claude Code | Codex |
 | --- | --- | --- |
-| **What updates it** | Its background self-update, which runs `npm install -g` into `~/.npm-global`, ahead of `/usr/local/bin` on `PATH` | Its background daemon. Interactive `codex` starts it, running a copy of Codex in `~/.codex/packages/app-server-daemon/` that a companion updater replaces from upstream's `install.sh` within minutes, then hourly. `codex --version` still reports the pin |
-| **How the image turns it off** | `DISABLE_AUTOUPDATER=1`, an `ENV` in the image. Only `1` disables it; `0` or an empty value leaves it on | `daemon_auto_start = false` under `[features]` in `/etc/codex/config.toml`, Codex's system config layer, written when `INSTALL_CODEX=true` |
-| **Still open** | `claude update`, run by hand, installs into `~/.npm-global` the same way. Only `DISABLE_UPDATES=1` blocks it, and the image does not set it | The startup prompt: every interactive launch offers *Update now*, pre-selected, which runs `npm install -g @openai/codex` into `~/.npm-global`, as `codex update` does. `check_for_update_on_startup = false` would close it, and the image does not set it. `codex agents`, `codex app-server daemon start` and `codex remote-control` still start the daemon, updater included |
-| **Turn it back on** | Per container: `-e DISABLE_AUTOUPDATER=0`. Per command: `DISABLE_AUTOUPDATER=0 claude` | Per user: `daemon_auto_start = true` under `[features]` in `~/.codex/config.toml`, which overrides `/etc/codex/config.toml`. Per command: `codex -c features.daemon_auto_start=true` |
-| **Check the effective value** | `printenv DISABLE_AUTOUPDATER` prints `1`; `claude doctor` reports whether auto-update is on | `codex features list` reports `daemon_auto_start` as `false`; `codex doctor` reports the `startup update check` |
+| **What updates it** | Its background self-update, which runs `npm install -g` into `~/.npm-global`, ahead of `/usr/local/bin` on `PATH` | Its startup prompt: every interactive launch offers *Update now*, pre-selected, which runs `npm install -g @openai/codex` into `~/.npm-global`. And its background daemon: interactive `codex` starts it, running a copy of Codex in `~/.codex/packages/app-server-daemon/` that a companion updater replaces from upstream's `install.sh` within minutes, then hourly, while `codex --version` still reports the pin |
+| **How the image turns it off** | `DISABLE_AUTOUPDATER=1`, an `ENV` in the image. Only `1` disables it; `0` or an empty value leaves it on | Two keys in `/etc/codex/config.toml`, Codex's system config layer, written when `INSTALL_CODEX=true`: `check_for_update_on_startup = false` at the top level, and `daemon_auto_start = false` under `[features]` |
+| **Still open** | `claude update`, run by hand, installs into `~/.npm-global` the same way. Only `DISABLE_UPDATES=1` blocks it, and the image does not set it | `codex update`, run by hand, installs into `~/.npm-global` the same way. `codex agents`, `codex app-server daemon start` and `codex remote-control` still start the daemon, updater included |
+| **Turn it back on** | Per container: `-e DISABLE_AUTOUPDATER=0`. Per command: `DISABLE_AUTOUPDATER=0 claude` | Per user, in `~/.codex/config.toml`, which overrides `/etc/codex/config.toml`: `check_for_update_on_startup = true` at the top, `daemon_auto_start = true` under `[features]`. Per command: `codex -c check_for_update_on_startup=true`, `codex -c features.daemon_auto_start=true` |
+| **Check the effective value** | `printenv DISABLE_AUTOUPDATER` prints `1`; `claude doctor` reports whether auto-update is on | `codex doctor` reports the `startup update check` as `false`; `codex features list` reports `daemon_auto_start` as `false` |
 | **Remove a copy already on the volume** | `which -a claude` lists it; `npm uninstall -g @anthropic-ai/claude-code` removes it | `which -a codex` lists an npm copy; `npm uninstall -g @openai/codex` removes it. For a daemon copy, kill the updater by the PID in `~/.codex/app-server-daemon/daemon-updater.pid`, then delete `~/.codex/packages/app-server-daemon/` |
 
-The smoke test asserts both off switches: `DISABLE_AUTOUPDATER` exported as `1`,
-and `daemon_auto_start` reported as `false` by `codex features list`.
+The smoke test asserts all three off switches: `DISABLE_AUTOUPDATER` exported
+as `1`, and Codex's effective `check_for_update_on_startup` and
+`daemon_auto_start`, as `codex doctor` and `codex features list` report them.
 
 ## Publishing credentials
 

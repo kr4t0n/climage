@@ -199,9 +199,10 @@ environment variable and publishing credential. The ones most people touch:
   publish; CI reads them from GitHub secrets.
 
 Both agent CLIs can replace themselves with a newer release than the image
-pins. The image turns off the updates that run unattended (Claude Code's with
-`DISABLE_AUTOUPDATER=1`, Codex's background daemon in `/etc/codex/config.toml`)
-and leaves the ones you start yourself, including Codex's startup update prompt.
+pins. The image turns off every update that starts without being asked for:
+Claude Code's with `DISABLE_AUTOUPDATER=1`, Codex's startup prompt and
+background daemon in `/etc/codex/config.toml`. `claude update` and
+`codex update`, run by hand, still work.
 [Agent CLI updates](CONFIGURATION.md#agent-cli-updates) sets out both CLIs the
 same way: what updates, how it is off, what is still open, how to turn it back
 on, and how to check.

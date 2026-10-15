@@ -457,11 +457,15 @@ ENV DISABLE_AUTOUPDATER=1
 
 # Codex 0.157+ starts a background daemon on every interactive launch, running a
 # copy of itself under ~/.codex/packages that a companion updater replaces from
-# install.sh — the same drift, with no prompt. /etc/codex/config.toml is Codex's
-# system layer: below ~/.codex/config.toml, so a default rather than a lock.
+# install.sh — the same drift, with no prompt. Its TUI also offers an update on
+# every launch, pre-selected, that runs `npm install -g` into the home volume as
+# Claude Code's updater did. /etc/codex/config.toml is Codex's system layer:
+# below ~/.codex/config.toml, so a default rather than a lock. The top-level key
+# must come before [features], or TOML reads it as a feature.
 RUN if [ "${INSTALL_CODEX}" = "true" ]; then \
         mkdir -p /etc/codex \
-        && printf '[features]\ndaemon_auto_start = false\n' > /etc/codex/config.toml; \
+        && printf 'check_for_update_on_startup = false\n\n[features]\ndaemon_auto_start = false\n' \
+            > /etc/codex/config.toml; \
     fi
 
 # --- First-party tooling ----------------------------------------------------
