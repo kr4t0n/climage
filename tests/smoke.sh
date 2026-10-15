@@ -274,6 +274,18 @@ if [[ "${INSTALL_CODEX:-true}" == "true" ]]; then
         printf 'FAIL  %-14s daemon_auto_start is %s, expected false\n' "codex daemon" "${daemon_flag:-<missing>}"
         failed=$((failed + 1))
     fi
+
+    # Same reason, for the startup update prompt. `codex doctor` exits non-zero
+    # when it finds no login, which a smoke run never has, so only its report is
+    # read, in the machine-readable form rather than the terminal layout.
+    startup_check=$(codex doctor --json 2>/dev/null \
+        | jq -r '.checks["updates.status"].details["check for update on startup"] // empty')
+    if [[ "${startup_check}" == "false" ]]; then
+        printf 'ok    %-14s check_for_update_on_startup=false\n' "codex prompt"
+    else
+        printf 'FAIL  %-14s check_for_update_on_startup is %s, expected false\n' "codex prompt" "${startup_check:-<missing>}"
+        failed=$((failed + 1))
+    fi
 fi
 
 # The runtime identity is part of the image's contract: uid 1000 keeps

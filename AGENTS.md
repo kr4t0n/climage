@@ -247,6 +247,10 @@ work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
 - **Adding a tool** touches three places: the `Dockerfile` package list, the
   `REQUIRED` array in `tests/smoke.sh`, and the tool table in `README.md`. A
   change that misses the smoke test is not covered by CI.
+- **User-facing configuration lives in `CONFIGURATION.md`**, not the README: a
+  new or changed build arg or runtime `ENV` updates its table there, and a
+  change to either agent CLI's update handling updates its column in the Agent
+  CLI updates table, keeping both columns' rows the same.
 - **Optional tooling** (anything behind a build arg) goes in the `OPTIONAL`
   array in the smoke test, which reports `skip` instead of failing.
 - Group apt packages by purpose and keep the grouping comment accurate.
@@ -352,13 +356,16 @@ from the volume, and `claude doctor` reported the update that put it there.
 matching how every other tool in the image is handled. Only the value `1`
 disables updates — `claude doctor` reports `0` and the empty string as enabled
 — so `0` is the documented opt-out, and the smoke test asserts the exact value.
-`skills` has no update mechanism at all. Codex has two; the image closes the
-silent one and leaves the prompted one open — see the next two entries.
+`skills` has no update mechanism at all. Codex has two, and the image turns
+both off by default — see the two Codex entries below.
 
-The variable prevents new shadow copies; it does not remove one an earlier image
-already let in. On an existing volume, `which -a claude` shows whether one is
-there, and `npm uninstall -g @anthropic-ai/claude-code` (as the runtime user,
-which targets `~/.npm-global`) removes it.
+The variable stops only the unattended update. `claude update`, run by hand,
+checks `DISABLE_UPDATES` alone (read from the 2.1.295 binary), which the image
+does not set, and installs into `~/.npm-global` the same way. Nor does the
+variable remove a shadow copy an earlier image already let in. On an existing
+volume, `which -a claude` shows whether one is there, and
+`npm uninstall -g @anthropic-ai/claude-code` (as the runtime user, which targets
+`~/.npm-global`) removes it.
 
 **Codex's background daemon updates itself silently, so the image turns off its
 auto-start.** Since 0.157 (`daemon_auto_start`, now stable and default `true`,
@@ -414,18 +421,27 @@ Claude Code's updater did — but only when someone runs it; pnpm has no
 automatic path. `which -a pnpm` shows a shadow copy, and
 `pnpm remove -g pnpm` removes it.
 
-**Codex's startup update prompt is still open.** The interactive TUI checks for
-a newer release on every launch (`check_for_update_on_startup`, default `true`)
-and offers *Update now* / *Not now* / *Don't remind*, with *Update now*
-pre-selected. Accepting it — one Enter — or running `codex update` executes
-`npm install -g @openai/codex`, which lands in `~/.npm-global` and shadows the
-image exactly as Claude Code's self-update did. `codex doctor` reports the
-effective `startup update check`, the update action and the cached latest
-version. The fix is one more line in the same file,
-`check_for_update_on_startup = false` (a top-level key, above `[features]`);
-the key is verified with `codex doctor` under `-c`, and the file is now proven
-to be read. It is deliberately left open for now because it takes a keypress,
-not a timer.
+**Codex's startup update prompt is off by default; a user can turn it back
+on.** The interactive TUI checks for a newer release on every launch
+(`check_for_update_on_startup`, default `true`) and offers *Update now* / *Not
+now* / *Don't remind*, with *Update now* pre-selected. Accepting it — one Enter
+— executes `npm install -g @openai/codex`, which lands in `~/.npm-global` and
+shadows the image exactly as Claude Code's self-update did. The image therefore
+writes `check_for_update_on_startup = false` into the same
+`/etc/codex/config.toml`, as a top-level key above `[features]`: below the
+header, TOML would read it as `features.check_for_update_on_startup`. A user
+turns the prompt back on with `check_for_update_on_startup = true` at the top
+of `~/.codex/config.toml`, or for one run with
+`codex -c check_for_update_on_startup=true`.
+
+The smoke test reads the effective value from `codex doctor --json`
+(`.checks["updates.status"].details["check for update on startup"]`, a string).
+`codex doctor` exits non-zero when any check fails, and with no login
+`auth.credentials` always does in a smoke run, so the test reads the report and
+ignores the exit status. `codex update`, run by hand, ignores the key — with the
+key off and a stub `npm` on `PATH`, 0.162.0 still ran
+`npm install -g @openai/codex` — so it can shadow the pin, as a manual
+`claude update` can.
 
 **`SHELL` is set with `ENV`, and checking it from bash lies.** Docker sets no
 `SHELL` of its own, and the `SHELL` Dockerfile directive only governs `RUN`
@@ -730,6 +746,3 @@ run; treat a step change as a regression to explain.
 - No vulnerability scanning. A Trivy or Grype job on the built image is the
   obvious next CI step.
 - Docker Hub's repository description is not synced from `README.md`.
-- Codex's startup update prompt is still on, so one accepted prompt re-creates
-  the shadowing that `DISABLE_AUTOUPDATER` closed for Claude Code. The fix is a
-  single line in `/etc/codex/config.toml` — see the prompt entry under gotchas.

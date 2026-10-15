@@ -45,15 +45,12 @@ and login shells, and all write under `$HOME` — so a volume mounted at
 `/home/climage` carries whatever an agent installs across restarts.
 
 `pnpm` is pinned like everything else, but a project whose `package.json` names
-a version in its `packageManager` field gets that version: pnpm fetches it on
-first use and runs it for that project only. `corepack`, which comes with
-Node.js, is also present but not enabled: `corepack pnpm` runs the
-`packageManager` version without needing shims on `PATH`.
-
-Yarn is not included. The official Node.js image ships Yarn Classic, and the
-build removes it so a stray `yarn` cannot write a second lockfile into a pnpm
-project. A project that uses Yarn runs it as `corepack yarn`, which fetches the
-version its `packageManager` field names.
+another version in its `packageManager` field gets that one: pnpm fetches it on
+first use and runs it for that project only. Yarn is not included — the build removes the Yarn
+Classic the official Node.js image ships, so a stray `yarn` cannot write a
+second lockfile into a pnpm project. `corepack`, which comes with Node.js, is
+present but not enabled: `corepack yarn` and `corepack pnpm` run the version a
+project's `packageManager` field names, with no shims on `PATH`.
 
 The default command adapts to how the container was started: a terminal gets an
 interactive shell, piped stdin is run as a script, and a container with neither
@@ -65,12 +62,9 @@ your own command bypasses it entirely.
 - Docker 24+ with BuildKit (Docker 29 tested)
 - `docker buildx` for multi-architecture builds (bundled with Docker Desktop and
   recent Docker Engine)
-- Optional, for local linting: `hadolint`, `shellcheck`, `gitleaks`. Every
-  climage variant ships all three, so this applies only when you work outside
-  the image
-- For the commit hooks: [pre-commit](https://pre-commit.com) 3.2.0 or later.
-  Every climage variant ships it, so this applies only when you work outside
-  the image
+- Outside the image only, since every climage variant ships them: `hadolint`,
+  `shellcheck` and `gitleaks` for local linting (optional), and
+  [pre-commit](https://pre-commit.com) 3.2.0 or later for the commit hooks
 
 ## Quick start
 
@@ -117,7 +111,8 @@ make test-all             # build and smoke-test all four, as CI does
 ```
 
 Version pins come from the `Dockerfile` unless you override one explicitly:
-`make build GO_VERSION=1.26`.
+`make build GO_VERSION=1.26`. [CONFIGURATION.md](CONFIGURATION.md#build-arguments)
+lists every build argument.
 
 ### Image variants
 
@@ -146,16 +141,8 @@ push. A release also publishes version tags — `0.4.0` and `0.4`, plus the
 addressable by a short-SHA tag. Pin a version tag when you need the base image
 to stay put.
 
-Build any of them locally with `make build VARIANT=slim|full|full-argus`, or
-with the matching build args directly:
-
-```bash
-docker build --build-arg INSTALL_BROWSER=true \
-    --build-arg INSTALL_GO=true --build-arg INSTALL_RUST=true -t climage:full .
-docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false -t climage:slim .
-```
-
-`full-argus` is the `full` command plus `--build-arg INSTALL_ARGUS=true`.
+Each variant is a set of build arguments, listed under
+[Variants](CONFIGURATION.md#variants) with the matching `docker build` commands.
 
 ### Headless browsers
 
@@ -167,11 +154,9 @@ docker run --rm kr4t0n/climage:full bash -lc \
     'npm i playwright && npx playwright install chromium && node my-script.js'
 ```
 
-Only the libraries are baked in, not a browser binary — a Playwright browser
-build must match the client library version, so a bundled one would simply be
-re-downloaded by any project on a different version. `playwright install`
-downloads into `~/.cache/ms-playwright`, which a volume mounted at
-`/home/climage` will persist.
+Only the libraries are baked in, not a browser binary: `playwright install`
+fetches the build that matches your client library into `~/.cache/ms-playwright`,
+which a volume mounted at `/home/climage` will persist.
 
 On `latest` or `slim` the same script fails when Chromium starts. Installing the
 libraries at runtime needs root *and* an `apt-get update` first, because the
@@ -203,72 +188,24 @@ agent permissions, so review a source before installing it.
 
 ## Configuration
 
-### Build arguments
+[CONFIGURATION.md](CONFIGURATION.md) lists every build argument, runtime
+environment variable and publishing credential. The ones most people touch:
 
-| Argument | Default | Purpose |
-| --- | --- | --- |
-| `NODE_VERSION` | `24` | Node.js major version (official image tag) |
-| `USERNAME` | `climage` | Runtime account name; the base image's `node` user is renamed to it, keeping uid 1000 |
-| `USERGROUP` | `users` | Primary group (gid 100). A shared group, not a per-user one, so an arbitrary-uid run (`--user 5000:100`) keeps group access |
-| `DEBIAN_SUITE` | `bookworm` | Debian suite of the base image |
-| `PYTHON_VERSION` | `3.12` | CPython version installed via `uv python install` |
-| `UV_VERSION` | `0.12.13` | `uv`/`uvx` release copied from Astral's image |
-| `RUFF_VERSION` | `0.16.7` | `ruff` release copied from Astral's image |
-| `INSTALL_CLAUDE_CODE` | `true` | Set `false` to omit the Claude Code CLI |
-| `CLAUDE_CODE_VERSION` | `2.1.296` | Exact Claude Code version (npm `latest`) |
-| `INSTALL_CODEX` | `true` | Set `false` to omit the Codex CLI |
-| `CODEX_VERSION` | `0.162.1` | Exact Codex CLI version (npm `latest`) |
-| `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
-| `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
-| `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |
-| `INSTALL_GO` | `false` | Go toolchain, copied from the official `golang` image; on in both `full` variants. Must be exactly `true` or `false` |
-| `GO_VERSION` | `1.27` | Go minor version (official image tag) |
-| `INSTALL_RUST` | `false` | Rust toolchain, copied from the official `rust` image; on in both `full` variants. Requires `INSTALL_BUILD_TOOLS=true` for a working linker. Must be exactly `true` or `false` |
-| `RUST_VERSION` | `1.98` | Rust version (official image tag) |
-| `CARGO_AUDIT_VERSION` | `0.22.2` | Exact [cargo-audit](https://github.com/rustsec/rustsec/tree/main/cargo-audit) release, installed only with `INSTALL_RUST=true` |
-| `CARGO_AUDIT_SHA256_AMD64`, `CARGO_AUDIT_SHA256_ARM64` | release digests | SHA-256 of each architecture's cargo-audit tarball; upstream publishes no checksum list, so the pins live here |
-| `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar`; on only in the `full-argus` variant |
-| `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in both `full` variants — ~18 MB, since the media group already provides most of the chain |
-| `ARGUS_VERSION` | `0.3.6` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
-| `SKILLS_VERSION` | `1.7.0` | Exact [skills](https://github.com/vercel-labs/skills) version |
-| `PNPM_VERSION` | `12.10.1` | Exact [pnpm](https://pnpm.io) version (npm `latest`); a project's `packageManager` field still selects its own |
-| `PRE_COMMIT_VERSION` | `4.6.2` | Exact [pre-commit](https://pre-commit.com) version, installed as a uv tool under `/opt/uv` |
-| `GITLEAKS_VERSION` | `8.30.1` | Exact [gitleaks](https://github.com/gitleaks/gitleaks) release, verified against its checksum list; the same version CI scans with |
-| `HADOLINT_VERSION` | `2.15.1` | Exact [hadolint](https://github.com/hadolint/hadolint) release, verified against its checksum list; the same version CI lints with |
-| `ACTIONLINT_VERSION` | `1.7.12` | Exact [actionlint](https://github.com/rhysd/actionlint) release, verified against its checksum list |
-| `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
+- `INSTALL_*` build arguments choose what goes into an image (the variants are
+  combinations of them), and the `*_VERSION` arguments pin each tool.
+- `CLIMAGE_INIT` names a script the entrypoint sources before your command, for
+  per-container bootstrap.
+- `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, in `.env`, let `make push`
+  publish; CI reads them from GitHub secrets.
 
-### Runtime environment variables
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `CLIMAGE_INIT` | unset | Path to a script the entrypoint sources before the command — use it for per-container bootstrap |
-| `UV_CACHE_DIR` | `/home/climage/.cache/uv` | Mount a volume here to persist Python downloads |
-| `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` | `/home/climage/.uv/tools`, `/home/climage/.uv/bin` | Where `uv tool install` puts tools and their entry points — under `$HOME`, so a home volume persists them |
-| `NPM_CONFIG_PREFIX` | `/home/climage/.npm-global` | Lets the unprivileged user `npm install -g` at runtime |
-| `PNPM_HOME` | `/home/climage/.local/share/pnpm` | Where `pnpm add -g` installs; its `bin/` subdirectory is on `PATH`, which pnpm 11 and later require. The store (`~/.local/share/pnpm/store`) sits alongside, so a home volume keeps both |
-| `GOPATH` / `GOBIN` | `/home/climage/.go`, `/home/climage/.go/bin` | Where `go install` puts binaries, and the root of all Go state — under `$HOME`, so a home volume persists it |
-| `GOCACHE` / `GOENV` | `/home/climage/.go/cache`, `/home/climage/.go/env` | Moved off their `~/.cache` and `~/.config` defaults so everything Go writes lives in `~/.go`. `GOMODCACHE` follows `GOPATH` to `~/.go/pkg/mod` |
-| `CARGO_INSTALL_ROOT` | `/home/climage/.cargo` | Where `cargo install` puts binaries, for the same reason. The toolchain itself stays in `/opt/rust` |
-| `LANG` | `en_US.UTF-8` | Locale is generated in the image |
-| `SHELL` | `/bin/bash` | Shell that agents and tools spawn; without it they fall back to `/bin/sh` (dash) |
-| `DISABLE_AUTOUPDATER` | `1` | Stops Claude Code from updating itself, so the image's pinned version is the one that runs. Set `0` to re-enable; updates then land in `~/.npm-global` and take precedence over the image's copy |
-
-Codex's equivalent is a config file rather than a variable. The image ships
-`/etc/codex/config.toml` with `daemon_auto_start = false`, which stops
-interactive `codex` from starting its background server — a copy of Codex on
-the home volume that updates itself hourly. Turn it back on per user with
-`[features]` / `daemon_auto_start = true` in `~/.codex/config.toml`, which takes
-precedence; `codex features list` shows the effective value.
-
-### Publishing credentials
-
-| Name | Where | Purpose |
-| --- | --- | --- |
-| `DOCKERHUB_USERNAME` | GitHub secret / `.env` | Docker Hub namespace and login |
-| `DOCKERHUB_TOKEN` | GitHub secret / `.env` | Docker Hub access token, Read & Write scope |
-| `IMAGE_NAME` | GitHub repo variable / `.env` (optional) | Image name; defaults to `climage` |
-| `IMAGE_TAG` | `.env` (optional) | Tag for images the `Makefile` builds and pushes; defaults to `dev` |
+Both agent CLIs can replace themselves with a newer release than the image
+pins. The image turns off every update that starts without being asked for:
+Claude Code's with `DISABLE_AUTOUPDATER=1`, Codex's startup prompt and
+background daemon in `/etc/codex/config.toml`. `claude update` and
+`codex update`, run by hand, still work.
+[Agent CLI updates](CONFIGURATION.md#agent-cli-updates) sets out both CLIs the
+same way: what updates, how it is off, what is still open, how to turn it back
+on, and how to check.
 
 ## CI and publishing
 
@@ -290,6 +227,8 @@ A pull request builds and tests exactly what merging it would publish.
 ```
 .
 ├── Dockerfile                 # the image definition (single source of truth)
+├── README.md                  # this overview
+├── CONFIGURATION.md           # build args, runtime env vars, agent CLI updates
 ├── AGENTS.md                  # design decisions, conventions and gotchas
 ├── CLAUDE.md                  # points Claude Code at AGENTS.md
 ├── .dockerignore              # keeps the build context to scripts/ only
@@ -309,9 +248,8 @@ A pull request builds and tests exactly what merging it would publish.
 
 ## Contributing
 
-Every climage variant ships pre-commit, so inside the image there is nothing to
-install; outside it, pre-commit is a [prerequisite](#prerequisites). Enable the
-hooks once per clone:
+Enable the commit hooks once per clone. Every climage variant ships pre-commit;
+outside the image it is a [prerequisite](#prerequisites).
 
 ```bash
 pre-commit install
@@ -329,4 +267,8 @@ A finding that is not a secret is allowlisted in `.gitleaks.toml` or
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 Adding a tool means updating three places: the `Dockerfile` package list, the
-`REQUIRED` array in `tests/smoke.sh`, and the table in this README.
+`REQUIRED` array in `tests/smoke.sh`, and the [What's inside](#whats-inside)
+table. A tool that brings a build argument (a version pin or an `INSTALL_*`
+flag) also gets a row in [CONFIGURATION.md](CONFIGURATION.md#build-arguments).
+[AGENTS.md](AGENTS.md) holds the design decisions and gotchas to read before
+changing the `Dockerfile` or CI.
