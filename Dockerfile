@@ -10,6 +10,8 @@
 #                       official images; both `full` variants turn them on
 #   apt layer        -> search/media/build tooling agents shell out to
 #   gitleaks         -> secret scanner for commit hooks, from a verified release
+#   hadolint +       -> Dockerfile and workflow linters, from verified releases
+#   actionlint
 #
 # All versions are build args so they can be pinned per build and bumped by
 # Dependabot in one place. See README.md for the supported matrix.
@@ -87,6 +89,10 @@ ARG PRE_COMMIT_VERSION=4.6.2
 # The same release ci.yml scans with and the gitleaks hook in
 # .pre-commit-config.yaml builds; the three pins move together.
 ARG GITLEAKS_VERSION=8.30.1
+# The hadolint release inside the hadolint-action ci.yml pins, so a local lint
+# agrees with CI. Dependabot bumps the action, never this; see AGENTS.md.
+ARG HADOLINT_VERSION=2.15.1
+ARG ACTIONLINT_VERSION=1.7.12
 # Heavyweight package groups, measured: media pulls 172 packages / ~409 MB
 # (ffmpeg alone drags in LLVM, mesa GL drivers and a speech synthesiser), build
 # tools another ~231 MB. Both default on; turn either off for a slim variant.
@@ -387,6 +393,43 @@ RUN case "${TARGETARCH}" in \
     && install -m 0755 "${tmp}/gitleaks" /usr/local/bin/gitleaks \
     && rm -rf "${tmp}"
 
+# --- Linters ----------------------------------------------------------------
+# hadolint (Dockerfiles) and actionlint (GitHub Actions workflows) sit outside
+# every project manifest: hadolint is a Haskell binary, and a repository with no
+# Go code has no go.mod to hold actionlint. Both come from the release and are
+# checked against its checksum list, as gitleaks is. actionlint shellchecks each
+# `run:` block with the shellcheck from the apt layer.
+RUN case "${TARGETARCH}" in \
+        amd64) arch=x86_64 ;; \
+        arm64) arch=arm64 ;; \
+        *) echo "hadolint: no release asset for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && base="https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}" \
+    && asset="hadolint-linux-${arch}" \
+    && tmp="$(mktemp -d)" \
+    && curl -fsSL "${base}/checksums.sha256" -o "${tmp}/checksums.sha256" \
+    && curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}" \
+    # hadolint's list prefixes each name with sha256sum's binary-mode `*`.
+    && awk -v a="${asset}" -v d="${tmp}" '$2 == "*" a { print $1 "  " d "/" a }' \
+         "${tmp}/checksums.sha256" | sha256sum -c - \
+    && install -m 0755 "${tmp}/${asset}" /usr/local/bin/hadolint \
+    && rm -rf "${tmp}"
+
+RUN case "${TARGETARCH}" in \
+        amd64|arm64) arch="${TARGETARCH}" ;; \
+        *) echo "actionlint: no release asset for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && base="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}" \
+    && asset="actionlint_${ACTIONLINT_VERSION}_linux_${arch}.tar.gz" \
+    && tmp="$(mktemp -d)" \
+    && curl -fsSL "${base}/actionlint_${ACTIONLINT_VERSION}_checksums.txt" -o "${tmp}/checksums.txt" \
+    && curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}" \
+    && awk -v a="${asset}" -v d="${tmp}" '$2 == a { print $1 "  " d "/" a }' \
+         "${tmp}/checksums.txt" | sha256sum -c - \
+    && tar -xzf "${tmp}/${asset}" -C "${tmp}" actionlint \
+    && install -m 0755 "${tmp}/actionlint" /usr/local/bin/actionlint \
+    && rm -rf "${tmp}"
+
 # --- pnpm -------------------------------------------------------------------
 # Installed as root into /usr/local, like the agent CLIs, so a home volume
 # cannot hide it. A project's `packageManager` field still wins: pnpm fetches
@@ -473,10 +516,12 @@ RUN printf 'export PATH="%s/bin:%s/bin:%s:%s:%s/bin:/opt/uv/bin:/opt/rust/cargo/
 
 # Record which optional groups this image was built with, so the smoke test can
 # require exactly what is meant to be present and users can introspect a pull.
-RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_BROWSER=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\nINSTALL_GO=%s\nINSTALL_RUST=%s\n' \
+# The linter pins go along, for the smoke test to check each binary against.
+RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_BROWSER=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\nINSTALL_GO=%s\nINSTALL_RUST=%s\nHADOLINT_VERSION=%s\nACTIONLINT_VERSION=%s\n' \
         "${INSTALL_MEDIA}" "${INSTALL_BUILD_TOOLS}" "${INSTALL_BROWSER}" \
         "${INSTALL_CLAUDE_CODE}" "${INSTALL_CODEX}" "${INSTALL_SKILLS}" \
         "${INSTALL_ARGUS}" "${INSTALL_GO}" "${INSTALL_RUST}" \
+        "${HADOLINT_VERSION}" "${ACTIONLINT_VERSION}" \
         > /etc/climage-build.env
 
 COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
