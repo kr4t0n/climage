@@ -26,6 +26,8 @@ REQUIRED=(
     "git-lfs --version"
     "gh --version"
     "gitleaks version"
+    "hadolint --version"
+    "actionlint --version"
     "curl --version"
     "wget --version"
     "rsync --version"
@@ -144,6 +146,43 @@ if [[ "${precommit_path}" == /opt/uv/bin/pre-commit ]]; then
 else
     printf 'FAIL  %-14s resolves to %s, expected /opt/uv/bin/pre-commit\n' \
         "pre-commit dir" "${precommit_path:-<none>}"
+    failed=$((failed + 1))
+fi
+
+# The build records the linter pins. Each binary must report exactly its pin:
+# hadolint's is the release CI's hadolint-action runs, so a local lint and CI
+# judge a Dockerfile by the same rules.
+check_pin() { # check_pin <cmd> <pin> <reported version>
+    local cmd=$1 pin=$2 reported=$3
+    if [[ -n "${pin}" && "${reported}" == "${pin}" ]]; then
+        printf 'ok    %-14s %s, as pinned\n' "${cmd} pin" "${reported}"
+    else
+        printf 'FAIL  %-14s reports %s, expected %s\n' "${cmd} pin" \
+            "${reported:-<nothing>}" "${pin:-<unrecorded>}"
+        failed=$((failed + 1))
+    fi
+}
+check_pin hadolint "${HADOLINT_VERSION:-}" \
+    "$(hadolint --version 2>/dev/null | awk 'NR == 1 { print $NF }')"
+check_pin actionlint "${ACTIONLINT_VERSION:-}" \
+    "$(actionlint --version 2>/dev/null | awk 'NR == 1')"
+
+# actionlint shellchecks `run:` blocks only when it finds shellcheck on PATH,
+# and skips them silently when it does not. An unquoted variable in a step has
+# to come back as SC2086. The `$HOME` is for actionlint to find, not this shell.
+# shellcheck disable=SC2016
+workflow='on: push
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo $HOME
+'
+report=$(printf '%s' "${workflow}" | actionlint -no-color - 2>&1 || true)
+if [[ "${report}" == *SC2086* ]]; then
+    printf 'ok    %-14s shellchecks run: blocks\n' "actionlint"
+else
+    printf 'FAIL  %-14s did not shellcheck a run: block\n' "actionlint"
     failed=$((failed + 1))
 fi
 

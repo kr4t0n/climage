@@ -69,7 +69,7 @@ run: ## Run a one-off command in the image (make run CMD="rg --version")
 shell: ## Open an interactive shell with the current directory mounted
 	docker run --rm -it -v "$(CURDIR):/workspace" $(IMAGE)
 
-lint: ## Lint and scan for secrets (requires hadolint, shellcheck, gitleaks)
+lint: ## Lint and scan for secrets (hadolint, shellcheck, gitleaks; the image has all three)
 	hadolint --config .hadolint.yaml Dockerfile
 	shellcheck scripts/*.sh tests/*.sh
 	gitleaks git --redact --no-banner .

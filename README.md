@@ -24,9 +24,10 @@ it to Docker Hub. There is no application code.
 | Media & documents | `ffmpeg`, `ffprobe`, `convert` (ImageMagick), `pdftotext` (poppler) |
 | VCS & network | `git`, `git-lfs`, `gh`, `ssh`, `curl`, `wget`, `rsync`, `dig`, `ping`, `nc`, `socat` |
 | Secrets & hooks | `gitleaks`, `pre-commit` |
+| Linters | `hadolint` (Dockerfiles), `actionlint` (GitHub Actions workflows), `shellcheck` |
 | Data | `sqlite3` |
 | Build | `build-essential` (`gcc`, `make`), `pkg-config` |
-| Shell & process | `bash`, `tmux`, `vim.tiny`, `htop`, `procps`, `shellcheck`, `tini` |
+| Shell & process | `bash`, `tmux`, `vim.tiny`, `htop`, `procps`, `tini` |
 | Archives | `unzip`, `zip`, `xz`, `bzip2`, `tar`, `gzip` |
 | Agent CLIs | `claude` (Claude Code), `codex` (OpenAI Codex), `skills` (open agent-skills manager) — all optional, on by default |
 | First-party | `argus-sidecar` — off by default, only in the [`full-argus`](#image-variants) variant |
@@ -64,7 +65,9 @@ your own command bypasses it entirely.
 - Docker 24+ with BuildKit (Docker 29 tested)
 - `docker buildx` for multi-architecture builds (bundled with Docker Desktop and
   recent Docker Engine)
-- Optional, for local linting: `hadolint`, `shellcheck`, `gitleaks`
+- Optional, for local linting: `hadolint`, `shellcheck`, `gitleaks`. Every
+  climage variant ships all three, so this applies only when you work outside
+  the image
 - For the commit hooks: [pre-commit](https://pre-commit.com) 3.2.0 or later.
   Every climage variant ships it, so this applies only when you work outside
   the image
@@ -123,15 +126,15 @@ something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
-| `latest` | everything in the table above except the Go and Rust toolchains | 2.1 GB | 796 MB |
-| `slim` | no media or build-tool packages | 1.5 GB | 562 MB |
-| `full` | `latest` plus the Go and Rust toolchains and the headless-browser libraries | 3.0 GB | 1087 MB |
-| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.0 GB | 1092 MB |
+| `latest` | everything in the table above except the Go and Rust toolchains | 2.2 GB | 811 MB |
+| `slim` | no media or build-tool packages | 1.5 GB | 576 MB |
+| `full` | `latest` plus the Go and Rust toolchains and the headless-browser libraries | 3.0 GB | 1101 MB |
+| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.0 GB | 1106 MB |
 
 Both columns are amd64: uncompressed as the CI size step measures it, compressed
 as Docker Hub reports the pushed image. arm64 runs slightly smaller in both.
 The Go and Rust toolchains account for nearly all of the difference between
-`full` and `latest` (291 MB compressed), so pull `latest` unless you need them.
+`full` and `latest` (290 MB compressed), so pull `latest` unless you need them.
 
 ```bash
 docker pull kr4t0n/climage:full
@@ -231,6 +234,8 @@ agent permissions, so review a source before installing it.
 | `PNPM_VERSION` | `12.10.1` | Exact [pnpm](https://pnpm.io) version (npm `latest`); a project's `packageManager` field still selects its own |
 | `PRE_COMMIT_VERSION` | `4.6.2` | Exact [pre-commit](https://pre-commit.com) version, installed as a uv tool under `/opt/uv` |
 | `GITLEAKS_VERSION` | `8.30.1` | Exact [gitleaks](https://github.com/gitleaks/gitleaks) release, verified against its checksum list; the same version CI scans with |
+| `HADOLINT_VERSION` | `2.15.1` | Exact [hadolint](https://github.com/hadolint/hadolint) release, verified against its checksum list; the same version CI lints with |
+| `ACTIONLINT_VERSION` | `1.7.12` | Exact [actionlint](https://github.com/rhysd/actionlint) release, verified against its checksum list |
 | `VERSION`, `REVISION`, `CREATED` | `dev`/`unknown` | OCI labels, populated by CI |
 
 ### Runtime environment variables
@@ -316,9 +321,11 @@ The hooks scan staged changes for secrets with gitleaks, lint the Dockerfile
 with hadolint and the scripts with shellcheck, both through Docker. In a
 container with no Docker daemon, skip those two with
 `SKIP=hadolint-docker,shellcheck`; CI runs both linters on every pull request,
-and repeats the secret scan over the whole history. A finding that is not a
-secret is allowlisted in `.gitleaks.toml` or `.gitleaksignore` and reviewed
-like any other change.
+and repeats the secret scan over the whole history. Inside the image the linters
+need no Docker: `make lint` runs the image's own copies (`slim` has no `make`,
+so run its three commands directly), and its hadolint is the release CI uses.
+A finding that is not a secret is allowlisted in `.gitleaks.toml` or
+`.gitleaksignore` and reviewed like any other change.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 Adding a tool means updating three places: the `Dockerfile` package list, the

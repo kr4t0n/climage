@@ -37,8 +37,8 @@ Five inputs converge on one final stage:
   want them never pulls them. Off by default; `full` and `full-argus` enable
   both.
 - **Verified release tarballs** — binaries downloaded by pinned release and
-  checked by SHA-256 before install: gitleaks in every variant, cargo-audit in
-  the two Rust variants, argus in `full-argus`.
+  checked by SHA-256 before install: gitleaks, hadolint and actionlint in every
+  variant, cargo-audit in the two Rust variants, argus in `full-argus`.
 - **apt layer** — Debian packages for search, media, documents, VCS, build, and
   shell tooling, plus the GitHub CLI from its own apt repository.
 
@@ -82,20 +82,33 @@ pins by SHA-256, so baking that same artifact keeps a version bump to one
 checksum list. Its asset names say `x64` where Docker says `amd64`, so the build
 maps `TARGETARCH` explicitly; an architecture without a mapping fails the build.
 
+hadolint and actionlint take the same shape, and their case statements fail the
+same way. hadolint's layout has moved twice: `Linux` became `linux` in 2.13,
+and 2.15 replaced the per-asset `.sha256` files with one `checksums.sha256`,
+whose names carry sha256sum's binary-mode `*`. A bump therefore means checking
+the release's asset list, as with argus. actionlint's asset names already use
+Docker's `amd64` and `arm64`.
+
 **The image is the global layer: runtimes and launchers. Projects hold the
 rest.** The image pins what a project calls directly — node, uv, pnpm,
-pre-commit and gitleaks in every variant, plus Go, cargo and cargo-audit in
-`full` and `full-argus`. A project holds everything those launchers run, with
-its configuration and locks: Python tools as dev dependencies in `uv.lock`, run
-with `uv run`; frontend tools as devDependencies in its lockfile; Go tools as
-`tool` lines in `go.mod`, run with `go tool`; commit hooks pinned by `rev` in
-`.pre-commit-config.yaml`. A tool earns a place in the image by being a
-launcher, or by sitting outside every manifest.
+pre-commit, gitleaks, hadolint and actionlint in every variant, plus Go, cargo
+and cargo-audit in `full` and `full-argus`. A project holds everything those
+launchers run, with its configuration and locks: Python tools as dev
+dependencies in `uv.lock`, run with `uv run`; frontend tools as devDependencies
+in its lockfile; Go tools as `tool` lines in `go.mod`, run with `go tool`;
+commit hooks pinned by `rev` in `.pre-commit-config.yaml`. A tool earns a place
+in the image by being a launcher, or by sitting outside every manifest.
 
 gitleaks is a Go binary that commit hooks call from `PATH` — husky hooks run it
 directly, and pre-commit's `gitleaks-system` hook expects it — and without one,
 pre-commit's stock `gitleaks` hook downloads a Go toolchain from go.dev and
 compiles gitleaks into every fresh hook cache.
+
+hadolint and actionlint sit outside every manifest. hadolint is a Haskell
+binary that no package manager here can hold, and actionlint, though a Go
+tool, would need a `go.mod` that a repository of Dockerfiles and workflows does
+not have and should not gain just to pin a linter. actionlint shellchecks every
+`run:` block with the `shellcheck` it finds on `PATH`, the apt layer's.
 
 pre-commit is the launcher for a project's hooks, so projects take it from the
 image rather than pin it, Python projects included. The project pins the hooks
@@ -222,7 +235,9 @@ override the library may not expose. `sleep` is `exec`'d, so it keeps the PID
 promotes each group to *required* when it was enabled — so a slim build passes
 while a default build that silently lost ffmpeg still fails. Marking those tools
 merely "optional" in the test would have hidden exactly the regression the test
-exists to catch.
+exists to catch. The same file records `HADOLINT_VERSION` and
+`ACTIONLINT_VERSION`, and the smoke test fails when either binary reports
+another version.
 
 **Smoke test as the contract.** The image's promise is "these commands exist and
 work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
@@ -487,9 +502,9 @@ variants table is the registry figure, and it comes from Docker Hub, not from
 `inspect`. The check that settles it: CI reports 1.9 GB for the base build,
 against a README that lists 2.0 GB uncompressed and 698 MB compressed.
 
-Measured on amd64 in CI, the four variants are 1.5 GB (`slim`), 2.1 GB
-(`base`), and 3.0 GB for both `full` and `full-argus`; arm64 runs 0.1–0.2 GB
-smaller across the board.
+Measured on amd64 in CI, the four variants are 1.5 GB (`slim`), 2.2 GB
+(`base`), and 3.0 GB for both `full` and `full-argus`; arm64 runs up to 0.2 GB
+smaller (1.5, 2.1, 2.8 and 2.8 GB).
 
 The CI figure is rounded *up* — `numfmt --to=iec` rounds away from zero, so
 2,147,483,649 bytes prints as `2.1G` — which makes step changes look up to
@@ -512,7 +527,8 @@ of 2.1.296 / 0.162.1), ffmpeg's dependency tree 364 MB, the build-essential
 chain 231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB —
 pnpm 12 ships a self-contained native executable rather than JavaScript, so its
 npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
-21 MB static binary to every variant, and pre-commit's tool environment 18 MB;
+21 MB static binary to every variant, hadolint 56 MB (60 MB on arm64; 12 MB
+compressed), actionlint 6 MB, and pre-commit's tool environment 18 MB;
 cargo-audit adds 15 MB (13 MB on arm64) to the two Rust variants. Only the group flags move the needle; trimming
 individual utilities does not. `python3-dev`/`python3-venv` were dropped as
 redundant — `python3` resolves to uv's interpreter, so C extensions build
@@ -691,6 +707,19 @@ together.
 entry is the bare `ghcr.io/hadolint/hadolint`, so it runs whatever `latest` is,
 while CI's hadolint-action pins its hadolint image by digest. After a hadolint
 release a local pass and the CI result can disagree; CI is the one that gates.
+The image's own hadolint is CI's release, so a lint run inside climage agrees
+with CI. hadolint's `language: system` hook (`id: hadolint`) would run that
+copy, at the cost of needing hadolint on `PATH` outside the image.
+
+**hadolint is pinned twice, and Dependabot moves only one.** The
+hadolint-action SHA in `ci.yml` fixes the hadolint image CI lints with, and
+`HADOLINT_VERSION` bakes the same release into the image. Dependabot's
+`github-actions` updater bumps the action and knows nothing of the `ARG`, so a
+hadolint-action bump needs a commit that moves `HADOLINT_VERSION` to the release
+in the new tag's `Dockerfile` (its `FROM ghcr.io/hadolint/hadolint:v<version>`
+line; `gh api 'repos/hadolint/hadolint-action/contents/Dockerfile?ref=<tag>'`
+reads it). The smoke test checks the binary against the `ARG`, not against CI,
+so nothing fails when the two drift apart.
 
 **Image size is a real constraint.** `build-essential`, `ffmpeg`, and
 `imagemagick` dominate the footprint. The CI build reports the size on every
