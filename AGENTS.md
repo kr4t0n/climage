@@ -247,6 +247,10 @@ work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
 - **Adding a tool** touches three places: the `Dockerfile` package list, the
   `REQUIRED` array in `tests/smoke.sh`, and the tool table in `README.md`. A
   change that misses the smoke test is not covered by CI.
+- **User-facing configuration lives in `CONFIGURATION.md`**, not the README: a
+  new or changed build arg or runtime `ENV` updates its table there, and a
+  change to either agent CLI's update handling updates its column in the Agent
+  CLI updates table, keeping both columns' rows the same.
 - **Optional tooling** (anything behind a build arg) goes in the `OPTIONAL`
   array in the smoke test, which reports `skip` instead of failing.
 - Group apt packages by purpose and keep the grouping comment accurate.
