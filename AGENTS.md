@@ -502,9 +502,9 @@ variants table is the registry figure, and it comes from Docker Hub, not from
 `inspect`. The check that settles it: CI reports 1.9 GB for the base build,
 against a README that lists 2.0 GB uncompressed and 698 MB compressed.
 
-Measured on amd64 in CI, the four variants are 1.5 GB (`slim`), 2.1 GB
-(`base`), and 3.0 GB for both `full` and `full-argus`; arm64 runs 0.1–0.2 GB
-smaller across the board.
+Measured on amd64 in CI, the four variants are 1.5 GB (`slim`), 2.2 GB
+(`base`), and 3.0 GB for both `full` and `full-argus`; arm64 runs up to 0.2 GB
+smaller (1.5, 2.1, 2.8 and 2.8 GB).
 
 The CI figure is rounded *up* — `numfmt --to=iec` rounds away from zero, so
 2,147,483,649 bytes prints as `2.1G` — which makes step changes look up to

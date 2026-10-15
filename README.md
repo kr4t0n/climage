@@ -126,7 +126,7 @@ something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
-| `latest` | everything in the table above except the Go and Rust toolchains | 2.1 GB | 811 MB |
+| `latest` | everything in the table above except the Go and Rust toolchains | 2.2 GB | 811 MB |
 | `slim` | no media or build-tool packages | 1.5 GB | 576 MB |
 | `full` | `latest` plus the Go and Rust toolchains and the headless-browser libraries | 3.0 GB | 1101 MB |
 | `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.0 GB | 1106 MB |
