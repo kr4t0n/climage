@@ -719,13 +719,17 @@ hook's `rev`, and the Dockerfile's `GITLEAKS_VERSION`, which bakes the same
 release into the image. Nothing bumps any of them automatically, so move them
 together.
 
-**The `hadolint-docker` pre-commit hook ignores its `rev`.** Upstream's hook
-entry is the bare `ghcr.io/hadolint/hadolint`, so it runs whatever `latest` is,
-while CI's hadolint-action pins its hadolint image by digest. After a hadolint
-release a local pass and the CI result can disagree; CI is the one that gates.
-The image's own hadolint is CI's release, so a lint run inside climage agrees
-with CI. hadolint's `language: system` hook (`id: hadolint`) would run that
-copy, at the cost of needing hadolint on `PATH` outside the image.
+**The hadolint hook runs the hadolint on `PATH`, whatever its `rev` says.** It
+is upstream's `language: system` hook (`id: hadolint`), so `rev` selects only
+the hook definition. Inside the image it runs the baked release, which is the
+one CI's hadolint-action pins by digest, so a commit hook and CI judge a
+Dockerfile alike. Outside the image the hook needs hadolint installed (pre-commit
+fails it with "Executable `hadolint` not found" otherwise), and a different
+release there can pass what CI fails, or the reverse; CI is the one that gates.
+The `rev` stays at `HADOLINT_VERSION` so that it names the release the hook
+runs in the image. Do not go back to `hadolint-docker`: its entry is the bare
+`ghcr.io/hadolint/hadolint`, so it ignores `rev`, runs whatever `latest` is, and
+needs a Docker daemon, which a climage container does not have.
 
 **hadolint is pinned twice, and Dependabot moves only one.** The
 hadolint-action SHA in `ci.yml` fixes the hadolint image CI lints with, and
@@ -734,8 +738,9 @@ hadolint-action SHA in `ci.yml` fixes the hadolint image CI lints with, and
 hadolint-action bump needs a commit that moves `HADOLINT_VERSION` to the release
 in the new tag's `Dockerfile` (its `FROM ghcr.io/hadolint/hadolint:v<version>`
 line; `gh api 'repos/hadolint/hadolint-action/contents/Dockerfile?ref=<tag>'`
-reads it). The smoke test checks the binary against the `ARG`, not against CI,
-so nothing fails when the two drift apart.
+reads it), and the hook's `rev` to the same tag. The smoke test checks the
+binary against the `ARG`, not against CI, so nothing fails when the two drift
+apart, and nothing checks the `rev` at all.
 
 **Image size is a real constraint.** `build-essential`, `ffmpeg`, and
 `imagemagick` dominate the footprint. The CI build reports the size on every

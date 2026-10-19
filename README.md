@@ -62,9 +62,11 @@ your own command bypasses it entirely.
 - Docker 24+ with BuildKit (Docker 29 tested)
 - `docker buildx` for multi-architecture builds (bundled with Docker Desktop and
   recent Docker Engine)
-- Outside the image only, since every climage variant ships them: `hadolint`,
-  `shellcheck` and `gitleaks` for local linting (optional), and
-  [pre-commit](https://pre-commit.com) 3.2.0 or later for the commit hooks
+- Outside the image only, since every climage variant ships them:
+  [pre-commit](https://pre-commit.com) 3.2.0 or later and `hadolint` for the
+  commit hooks, and `shellcheck` and `gitleaks` for `make lint` (optional). The
+  hadolint hook runs whichever release is on `PATH`; CI lints with the one in
+  [`HADOLINT_VERSION`](CONFIGURATION.md#build-arguments)
 
 ## Quick start
 
@@ -256,12 +258,13 @@ pre-commit install
 ```
 
 The hooks scan staged changes for secrets with gitleaks, lint the Dockerfile
-with hadolint and the scripts with shellcheck, both through Docker. In a
-container with no Docker daemon, skip those two with
-`SKIP=hadolint-docker,shellcheck`; CI runs both linters on every pull request,
-and repeats the secret scan over the whole history. Inside the image the linters
-need no Docker: `make lint` runs the image's own copies (`slim` has no `make`,
-so run its three commands directly), and its hadolint is the release CI uses.
+with the hadolint on `PATH`, and lint the scripts with shellcheck through
+Docker. In a container with no Docker daemon, skip shellcheck with
+`SKIP=shellcheck`; CI runs both linters on every pull request, and repeats the
+secret scan over the whole history. Inside the image the linters need no
+Docker: `make lint` runs the image's own copies (`slim` has no `make`, so run
+its three commands directly), and the image's hadolint, which the hook runs
+too, is the release CI uses.
 A finding that is not a secret is allowlisted in `.gitleaks.toml` or
 `.gitleaksignore` and reviewed like any other change.
 
