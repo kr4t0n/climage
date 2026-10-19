@@ -64,6 +64,16 @@ what the image promises.
 a default. Variant builds (`--build-arg NODE_VERSION=22`) require no Dockerfile
 edit, and there is exactly one place to bump.
 
+The base and language tags float within their pins, deliberately.
+`NODE_VERSION=24`, `GO_VERSION=1.27` and `RUST_VERSION=1.98` name a major or a
+minor, so a build without a layer cache takes whatever patch release is current
+that day, security fixes included, with no bump. The cost is that a publish can
+carry a base move its change did not make: Node went from 24.21.0 to 24.22.0 in
+the cold rebuild that added hadolint and actionlint. Before attributing a size
+or behaviour change to a change, compare the base layer and the runtime versions
+with the previous build. Pinning patches or digests would trade this for manual
+bumps, since Dependabot cannot follow these interpolated tags (see Gotchas).
+
 **Binary copy over installer scripts.** `COPY --from` on a pinned image tag is
 reproducible and auditable; piping a remote script into a shell is neither.
 argus has no distribution image, so it is fetched over HTTP instead —
@@ -197,7 +207,7 @@ default location, and where its content-addressed store already lives — takes
 `pnpm add -g` installs, with `$PNPM_HOME/bin` on `PATH`.
 
 corepack ships inside the Node.js distribution, so its version follows the base
-image rather than a pin here (0.36.0 with Node 24.21.0). It is deliberately not
+image rather than a pin here (0.36.0 with Node 24.22.0). It is deliberately not
 enabled: `corepack enable` writes its shims next to the `corepack` binary, into
 root-owned `/usr/local/bin`, where the runtime user cannot write and where its
 `pnpm` shim would take the path the pinned `pnpm` already occupies.
@@ -292,9 +302,10 @@ pins now live only in the `Dockerfile`; the `Makefile` forwards a build arg only
 when one is set. Do not reintroduce a default there, for any arg.
 
 **Make inherits the environment, and the base image exports `NODE_VERSION`.**
-The official `node` image sets `ENV NODE_VERSION=24.21.0`, so running `make`
-*inside* a climage container hands that value to the build and pins it to the
-host container's Node patch release instead of the intended major. `?=` is not a
+The official `node` image sets `ENV NODE_VERSION` to its full release
+(`24.22.0` at the time of writing), so running `make` *inside* a climage
+container hands that value to the build and pins it to the host container's
+Node patch release instead of the intended major. `?=` is not a
 defence — it only assigns when a variable is undefined, and an environment
 variable is defined. The `build_arg` function therefore tests `$(origin …)` and
 accepts only `command line` and `file` (the latter being `.env`, which is
@@ -719,13 +730,17 @@ hook's `rev`, and the Dockerfile's `GITLEAKS_VERSION`, which bakes the same
 release into the image. Nothing bumps any of them automatically, so move them
 together.
 
-**The `hadolint-docker` pre-commit hook ignores its `rev`.** Upstream's hook
-entry is the bare `ghcr.io/hadolint/hadolint`, so it runs whatever `latest` is,
-while CI's hadolint-action pins its hadolint image by digest. After a hadolint
-release a local pass and the CI result can disagree; CI is the one that gates.
-The image's own hadolint is CI's release, so a lint run inside climage agrees
-with CI. hadolint's `language: system` hook (`id: hadolint`) would run that
-copy, at the cost of needing hadolint on `PATH` outside the image.
+**The hadolint hook runs the hadolint on `PATH`, whatever its `rev` says.** It
+is upstream's `language: system` hook (`id: hadolint`), so `rev` selects only
+the hook definition. Inside the image it runs the baked release, which is the
+one CI's hadolint-action pins by digest, so a commit hook and CI judge a
+Dockerfile alike. Outside the image the hook needs hadolint installed (pre-commit
+fails it with "Executable `hadolint` not found" otherwise), and a different
+release there can pass what CI fails, or the reverse; CI is the one that gates.
+The `rev` stays at `HADOLINT_VERSION` so that it names the release the hook
+runs in the image. Do not go back to `hadolint-docker`: its entry is the bare
+`ghcr.io/hadolint/hadolint`, so it ignores `rev`, runs whatever `latest` is, and
+needs a Docker daemon, which a climage container does not have.
 
 **hadolint is pinned twice, and Dependabot moves only one.** The
 hadolint-action SHA in `ci.yml` fixes the hadolint image CI lints with, and
@@ -734,8 +749,9 @@ hadolint-action SHA in `ci.yml` fixes the hadolint image CI lints with, and
 hadolint-action bump needs a commit that moves `HADOLINT_VERSION` to the release
 in the new tag's `Dockerfile` (its `FROM ghcr.io/hadolint/hadolint:v<version>`
 line; `gh api 'repos/hadolint/hadolint-action/contents/Dockerfile?ref=<tag>'`
-reads it). The smoke test checks the binary against the `ARG`, not against CI,
-so nothing fails when the two drift apart.
+reads it), and the hook's `rev` to the same tag. The smoke test checks the
+binary against the `ARG`, not against CI, so nothing fails when the two drift
+apart, and nothing checks the `rev` at all.
 
 **Image size is a real constraint.** `build-essential`, `ffmpeg`, and
 `imagemagick` dominate the footprint. The CI build reports the size on every

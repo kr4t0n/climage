@@ -18,10 +18,12 @@ repos:
     hooks:
       - id: gitleaks
 
+  # A system hook: it runs the hadolint on PATH, so `rev` picks only the hook
+  # definition. Keep it at the Dockerfile's HADOLINT_VERSION; see AGENTS.md.
   - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0
+    rev: v2.15.1
     hooks:
-      - id: hadolint-docker
+      - id: hadolint
         args: [--config, .hadolint.yaml, --failure-threshold, warning]
 
   - repo: https://github.com/koalaman/shellcheck-precommit
