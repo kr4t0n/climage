@@ -38,7 +38,8 @@ Five inputs converge on one final stage:
   both.
 - **Verified release tarballs** — binaries downloaded by pinned release and
   checked by SHA-256 before install: gitleaks, hadolint and actionlint in every
-  variant, cargo-audit in the two Rust variants, argus in `full-argus`.
+  variant, cargo-audit in the two Rust variants, kubectl in both `full`
+  variants, argus in `full-argus`.
 - **apt layer** — Debian packages for search, media, documents, VCS, build, and
   shell tooling, plus the GitHub CLI from its own apt repository.
 
@@ -99,11 +100,18 @@ whose names carry sha256sum's binary-mode `*`. A bump therefore means checking
 the release's asset list, as with argus. actionlint's asset names already use
 Docker's `amd64` and `arm64`.
 
+kubectl takes the same shape from dl.k8s.io, Kubernetes' release host. Each
+binary there has a `.sha256` beside it that holds the bare digest with no file
+name, so the build writes the `sha256sum -c` line itself; an empty digest makes
+a malformed line, which fails the build. Its paths already use Docker's `amd64`
+and `arm64`. The pkgs.k8s.io apt repository would add a signing key and a
+second package source for one binary, so the image uses neither.
+
 **The image is the global layer: runtimes and launchers. Projects hold the
 rest.** The image pins what a project calls directly — node, uv, pnpm,
-pre-commit, gitleaks, hadolint and actionlint in every variant, plus Go, cargo
-and cargo-audit in `full` and `full-argus`. A project holds everything those
-launchers run, with its configuration and locks: Python tools as dev
+pre-commit, gitleaks, hadolint and actionlint in every variant, plus Go, cargo,
+cargo-audit and kubectl in `full` and `full-argus`. A project holds everything
+those launchers run, with its configuration and locks: Python tools as dev
 dependencies in `uv.lock`, run with `uv run`; frontend tools as devDependencies
 in its lockfile; Go tools as `tool` lines in `go.mod`, run with `go tool`;
 commit hooks pinned by `rev` in `.pre-commit-config.yaml`. A tool earns a place
@@ -119,6 +127,11 @@ binary that no package manager here can hold, and actionlint, though a Go
 tool, would need a `go.mod` that a repository of Dockerfiles and workflows does
 not have and should not gain just to pin a linter. actionlint shellchecks every
 `run:` block with the `shellcheck` it finds on `PATH`, the apt layer's.
+
+kubectl sits outside every manifest too. The version it has to match is a
+cluster's, not a project's, and a repository of Kubernetes manifests has no
+lockfile that could hold it. It is the one pin here that follows something
+outside the image; see the gotcha on it below.
 
 pre-commit is the launcher for a project's hooks, so projects take it from the
 image rather than pin it, Python projects included. The project pins the hooks
@@ -140,11 +153,11 @@ carrying in every image; govulncheck is a `tool` line in `go.mod`, which
 
 **Four variants, and `base` is the one that publishes as `latest`.** The ladder
 is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus the
-headless-browser libraries and the Go and Rust toolchains — the languages
-dominate its size) → `full-argus` (`full` plus first-party tooling). argus is
-the one component only argus deployments want, so it rides on its own tag rather
-than making every `full` consumer carry it; `full` therefore means "every
-general-purpose toolchain", and `full-argus` is the only image with
+headless-browser libraries, the Go and Rust toolchains and kubectl — the
+languages dominate its size) → `full-argus` (`full` plus first-party tooling).
+argus is the one component only argus deployments want, so it rides on its own
+tag rather than making every `full` consumer carry it; `full` therefore means
+"every general-purpose toolchain", and `full-argus` is the only image with
 `argus-sidecar`. The CI matrix name for the default variant is `base`, not
 `full`, because `full` is a published tag meaning something else. Only the tag
 names are a public contract; the matrix names are internal and appear in cache
@@ -245,9 +258,10 @@ override the library may not expose. `sleep` is `exec`'d, so it keeps the PID
 promotes each group to *required* when it was enabled — so a slim build passes
 while a default build that silently lost ffmpeg still fails. Marking those tools
 merely "optional" in the test would have hidden exactly the regression the test
-exists to catch. The same file records `HADOLINT_VERSION` and
-`ACTIONLINT_VERSION`, and the smoke test fails when either binary reports
-another version.
+exists to catch. The same file records `HADOLINT_VERSION`,
+`ACTIONLINT_VERSION` and `KUBECTL_VERSION`, and the smoke test fails when a
+binary reports another version. kubectl's pin is checked only in the variants
+whose `INSTALL_KUBECTL` put the binary there.
 
 **Smoke test as the contract.** The image's promise is "these commands exist and
 work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
@@ -556,8 +570,9 @@ pnpm 12 ships a self-contained native executable rather than JavaScript, so its
 npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
 21 MB static binary to every variant, hadolint 56 MB (60 MB on arm64; 12 MB
 compressed), actionlint 6 MB, and pre-commit's tool environment 18 MB;
-cargo-audit adds 15 MB (13 MB on arm64) to the two Rust variants. Only the group flags move the needle; trimming
-individual utilities does not. `python3-dev`/`python3-venv` were dropped as
+cargo-audit adds 15 MB (13 MB on arm64) to the two Rust variants, and kubectl
+59 MB (55 MB on arm64; 17 MB compressed) to both `full` variants. Only the group
+flags move the needle; trimming individual utilities does not. `python3-dev`/`python3-venv` were dropped as
 redundant — `python3` resolves to uv's interpreter, so C extensions build
 against uv's headers, not Debian's 3.11 ones.
 
@@ -662,6 +677,22 @@ golang:${GO_VERSION}-...` is interpolated, so the same limitation as
 manually maintained. `https://go.dev/VERSION?m=text` and
 `https://static.rust-lang.org/dist/channel-rust-stable.toml` both answer
 immediately and are the quickest way to check current stable.
+
+**kubectl follows a cluster's minor, and nothing bumps it.** kubectl supports
+API servers one minor older or newer than itself, so `KUBECTL_VERSION` tracks
+the cluster the `full` variants are deployed on, whose API server reports 1.35,
+rather than Kubernetes' newest release. At the time of writing that was 1.37.1,
+two minors ahead and outside the skew policy. Take the newest patch of the
+cluster's minor from `https://dl.k8s.io/release/stable-1.<minor>.txt`
+(`stable-1.35.txt` gave 1.35.9), and move the minor only when the cluster
+upgrades. The build fetches the digest from beside the binary, so a bump
+changes the version alone. Dependabot sees no `FROM` and no manifest for it, so
+like `GO_VERSION` it is maintained by hand.
+
+The smoke test runs `kubectl version --client` and nothing else: without
+`--client`, kubectl looks for a server, and nothing in the build or in CI may
+contact a cluster. kubectl's own state, `~/.kube/config` and the discovery
+cache in `~/.kube/cache`, sits under `$HOME`, so a home volume keeps it.
 
 **Host uid mismatch on bind mounts.** The image runs as uid 1000. On a host
 where the user is not 1000, files written into a mounted `/workspace` land with

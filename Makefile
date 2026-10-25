@@ -35,7 +35,8 @@ endif
 VARIANT_ARGS_base :=
 VARIANT_ARGS_slim := --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false
 VARIANT_ARGS_full := --build-arg INSTALL_BROWSER=true \
-                     --build-arg INSTALL_GO=true --build-arg INSTALL_RUST=true
+                     --build-arg INSTALL_GO=true --build-arg INSTALL_RUST=true \
+                     --build-arg INSTALL_KUBECTL=true
 VARIANT_ARGS_full-argus := $(VARIANT_ARGS_full) --build-arg INSTALL_ARGUS=true
 
 # Each variant gets its own local tag, so building one does not silently

@@ -29,6 +29,8 @@ values in the `Dockerfile`; credentials are listed by name only.
 | `RUST_VERSION` | `1.98` | Rust version (official image tag) |
 | `CARGO_AUDIT_VERSION` | `0.22.2` | Exact [cargo-audit](https://github.com/rustsec/rustsec/tree/main/cargo-audit) release, installed only with `INSTALL_RUST=true` |
 | `CARGO_AUDIT_SHA256_AMD64`, `CARGO_AUDIT_SHA256_ARM64` | release digests | SHA-256 of each architecture's cargo-audit tarball; upstream publishes no checksum list, so the pins live here |
+| `INSTALL_KUBECTL` | `false` | `kubectl`, the Kubernetes client, from the Kubernetes release; on in both `full` variants |
+| `KUBECTL_VERSION` | `1.35.9` | Exact kubectl release, verified against the SHA-256 published beside it. Follows the minor of the cluster the `full` variants run on, since kubectl supports one minor of skew either way |
 | `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar`; on only in the `full-argus` variant |
 | `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in both `full` variants — ~18 MB, since the media group already provides most of the chain |
 | `ARGUS_VERSION` | `0.3.6` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
@@ -49,14 +51,14 @@ keeps its default.
 | --- | --- | --- |
 | `base` | `latest` | none |
 | `slim` | `slim` | `INSTALL_MEDIA=false`, `INSTALL_BUILD_TOOLS=false` |
-| `full` | `full` | `INSTALL_BROWSER=true`, `INSTALL_GO=true`, `INSTALL_RUST=true` |
-| `full-argus` | `full-argus` | `full`'s three, plus `INSTALL_ARGUS=true` |
+| `full` | `full` | `INSTALL_BROWSER=true`, `INSTALL_GO=true`, `INSTALL_RUST=true`, `INSTALL_KUBECTL=true` |
+| `full-argus` | `full-argus` | `full`'s four, plus `INSTALL_ARGUS=true` |
 
 `make build VARIANT=<variant>` passes them for you. With Docker directly:
 
 ```bash
-docker build --build-arg INSTALL_BROWSER=true \
-    --build-arg INSTALL_GO=true --build-arg INSTALL_RUST=true -t climage:full .
+docker build --build-arg INSTALL_BROWSER=true --build-arg INSTALL_GO=true \
+    --build-arg INSTALL_RUST=true --build-arg INSTALL_KUBECTL=true -t climage:full .
 docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false -t climage:slim .
 ```
 
