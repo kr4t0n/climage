@@ -12,6 +12,8 @@
 #   gitleaks         -> secret scanner for commit hooks, from a verified release
 #   hadolint +       -> Dockerfile and workflow linters, from verified releases
 #   actionlint
+#   kubectl          -> optional Kubernetes client, from a verified release; both
+#                       `full` variants turn it on
 #
 # All versions are build args so they can be pinned per build and bumped by
 # Dependabot in one place. See README.md for the supported matrix.
@@ -493,6 +495,34 @@ RUN if [ "${INSTALL_ARGUS}" = "true" ]; then \
         && rm -rf "${tmp}"; \
     fi
 
+# --- Kubernetes client ------------------------------------------------------
+# kubectl, off by default — both `full` variants turn it on. Pinned to the
+# minor of the cluster those variants run on, not to Kubernetes' newest
+# release: kubectl supports one minor of skew either way. Nothing bumps it; see
+# AGENTS.md. These two ARGs sit here rather than with the pins at the top of
+# the stage because BuildKit puts every ARG in the environment of each later
+# RUN, so declaring them above would invalidate every cached layer below that
+# point, in every variant.
+ARG INSTALL_KUBECTL=false
+ARG KUBECTL_VERSION=1.35.9
+# dl.k8s.io publishes a bare digest beside each binary, with no file name, so
+# the check line is assembled here. An empty digest makes a malformed line,
+# which sha256sum rejects.
+RUN if [ "${INSTALL_KUBECTL}" = "true" ]; then \
+        case "${TARGETARCH}" in \
+            amd64|arm64) arch="${TARGETARCH}" ;; \
+            *) echo "kubectl: no release binary for ${TARGETARCH}" >&2; exit 1 ;; \
+        esac \
+        && base="https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${arch}" \
+        && tmp="$(mktemp -d)" \
+        && curl -fsSL "${base}/kubectl.sha256" -o "${tmp}/kubectl.sha256" \
+        && curl -fsSL "${base}/kubectl" -o "${tmp}/kubectl" \
+        && printf '%s  %s\n' "$(cat "${tmp}/kubectl.sha256")" "${tmp}/kubectl" \
+            | sha256sum -c - \
+        && install -m 0755 "${tmp}/kubectl" /usr/local/bin/kubectl \
+        && rm -rf "${tmp}"; \
+    fi
+
 # Everything the unprivileged user installs at runtime lands in $HOME, so a
 # volume mounted there carries it across container restarts: npm globals in
 # .npm-global, pnpm globals in .local/share/pnpm, uv tools in .uv. Every one of
@@ -520,12 +550,13 @@ RUN printf 'export PATH="%s/bin:%s/bin:%s:%s:%s/bin:/opt/uv/bin:/opt/rust/cargo/
 
 # Record which optional groups this image was built with, so the smoke test can
 # require exactly what is meant to be present and users can introspect a pull.
-# The linter pins go along, for the smoke test to check each binary against.
-RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_BROWSER=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\nINSTALL_GO=%s\nINSTALL_RUST=%s\nHADOLINT_VERSION=%s\nACTIONLINT_VERSION=%s\n' \
+# The linter and kubectl pins go along, for the smoke test to check each binary
+# against.
+RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_BROWSER=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\nINSTALL_GO=%s\nINSTALL_RUST=%s\nINSTALL_KUBECTL=%s\nHADOLINT_VERSION=%s\nACTIONLINT_VERSION=%s\nKUBECTL_VERSION=%s\n' \
         "${INSTALL_MEDIA}" "${INSTALL_BUILD_TOOLS}" "${INSTALL_BROWSER}" \
         "${INSTALL_CLAUDE_CODE}" "${INSTALL_CODEX}" "${INSTALL_SKILLS}" \
-        "${INSTALL_ARGUS}" "${INSTALL_GO}" "${INSTALL_RUST}" \
-        "${HADOLINT_VERSION}" "${ACTIONLINT_VERSION}" \
+        "${INSTALL_ARGUS}" "${INSTALL_GO}" "${INSTALL_RUST}" "${INSTALL_KUBECTL}" \
+        "${HADOLINT_VERSION}" "${ACTIONLINT_VERSION}" "${KUBECTL_VERSION}" \
         > /etc/climage-build.env
 
 COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh

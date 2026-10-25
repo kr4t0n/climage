@@ -20,6 +20,7 @@ it to Docker Hub. There is no application code.
 | Python toolchain | `uv`, `uvx`, `ruff` |
 | Go toolchain | `go`, `gofmt` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
 | Rust toolchain | `rustc`, `cargo`, `rustup`, `clippy`, `rustfmt`, `cargo audit` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
+| Kubernetes | `kubectl`, with `kubectl kustomize` built in — off by default, in the [`full` and `full-argus`](#kubernetes) variants |
 | Search & text | `rg` (ripgrep), `fd`, `bat`, `jq`, `tree`, `file`, `less`, `diff`, `patch`, `moreutils` |
 | Media & documents | `ffmpeg`, `ffprobe`, `convert` (ImageMagick), `pdftotext` (poppler) |
 | VCS & network | `git`, `git-lfs`, `gh`, `ssh`, `curl`, `wget`, `rsync`, `dig`, `ping`, `nc`, `socat` |
@@ -123,15 +124,17 @@ something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
-| `latest` | everything in the table above except the Go and Rust toolchains | 2.2 GB | 811 MB |
+| `latest` | everything in the table above except the Go and Rust toolchains and `kubectl` | 2.2 GB | 811 MB |
 | `slim` | no media or build-tool packages | 1.5 GB | 576 MB |
-| `full` | `latest` plus the Go and Rust toolchains and the headless-browser libraries | 3.0 GB | 1101 MB |
-| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.0 GB | 1106 MB |
+| `full` | `latest` plus the Go and Rust toolchains, `kubectl` and the headless-browser libraries | 3.1 GB | 1118 MB |
+| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.1 GB | 1123 MB |
 
-Both columns are amd64: uncompressed as the CI size step measures it, compressed
-as Docker Hub reports the pushed image. arm64 runs slightly smaller in both.
-The Go and Rust toolchains account for nearly all of the difference between
-`full` and `latest` (290 MB compressed), so pull `latest` unless you need them.
+Both columns are amd64: uncompressed is the total size of the image's files,
+compressed is what Docker Hub reports for the pushed image. arm64 runs slightly
+smaller in both.
+The Go and Rust toolchains account for most of the difference between `full`
+and `latest` (307 MB compressed, of which `kubectl` is 17 MB), so pull `latest`
+unless you need them.
 
 ```bash
 docker pull kr4t0n/climage:full
@@ -169,6 +172,15 @@ docker exec -u 0 <container> bash -lc 'apt-get update && apt-get install -y \
     --no-install-recommends libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
     libxcomposite1 libxdamage1'
 ```
+
+### Kubernetes
+
+Both `full` variants ship `kubectl`, with `kubectl kustomize` built in. It is
+pinned to one Kubernetes minor (`KUBECTL_VERSION`, 1.35 at present), and kubectl
+supports API servers one minor older or newer than itself, so check your
+cluster's version before relying on it. The image carries no kubeconfig and no
+credentials: kubectl reads `~/.kube/config` or `KUBECONFIG` as usual, and a
+volume mounted at `/home/climage` persists both the config and kubectl's cache.
 
 ## Agent skills
 

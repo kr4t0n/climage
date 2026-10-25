@@ -3,7 +3,7 @@
 # Run inside the image:  docker run --rm -v "$PWD/tests:/t:ro" IMAGE bash /t/smoke.sh
 set -uo pipefail
 
-# "<command> <version-flag>" — the flag is whatever exits 0 cheaply.
+# "<command> <version args>" — whatever exits 0 cheaply; split on spaces.
 REQUIRED=(
     "node --version"
     "npm --version"
@@ -64,6 +64,8 @@ add_group "${INSTALL_ARGUS:-false}" "argus-sidecar version"
 add_group "${INSTALL_GO:-false}" "go version" "gofmt -h"
 add_group "${INSTALL_RUST:-false}" "rustc --version" "cargo --version" \
     "rustfmt --version" "clippy-driver --version" "cargo-audit --version"
+# --client keeps kubectl from looking for a cluster, which no smoke run may reach.
+add_group "${INSTALL_KUBECTL:-false}" "kubectl version --client"
 
 # The browser group installs shared libraries, not commands, so it is checked
 # against the linker cache rather than PATH. These are the names Chromium fails
@@ -82,20 +84,22 @@ BROWSER_LIBS=(
 
 failed=0
 for entry in "${REQUIRED[@]}"; do
-    read -r cmd flag <<<"${entry}"
+    read -r -a argv <<<"${entry}"
+    cmd=${argv[0]}
     if ! command -v "${cmd}" >/dev/null 2>&1; then
         printf 'FAIL  %-14s not found on PATH\n' "${cmd}"
         failed=$((failed + 1))
         continue
     fi
-    version=$("${cmd}" "${flag}" 2>&1 | head -n 1)
+    version=$("${argv[@]}" 2>&1 | head -n 1)
     printf 'ok    %-14s %s\n' "${cmd}" "${version}"
 done
 
 for entry in "${OPTIONAL[@]}"; do
-    read -r cmd flag <<<"${entry}"
+    read -r -a argv <<<"${entry}"
+    cmd=${argv[0]}
     if command -v "${cmd}" >/dev/null 2>&1; then
-        printf 'ok    %-14s %s\n' "${cmd}" "$("${cmd}" "${flag}" 2>&1 | head -n 1)"
+        printf 'ok    %-14s %s\n' "${cmd}" "$("${argv[@]}" 2>&1 | head -n 1)"
     else
         printf 'skip  %-14s not installed (optional)\n' "${cmd}"
     fi
@@ -166,6 +170,12 @@ check_pin hadolint "${HADOLINT_VERSION:-}" \
     "$(hadolint --version 2>/dev/null | awk 'NR == 1 { print $NF }')"
 check_pin actionlint "${ACTIONLINT_VERSION:-}" \
     "$(actionlint --version 2>/dev/null | awk 'NR == 1')"
+# kubectl's pin follows a cluster's minor, so a wrong patch is worth catching
+# too. It reports "Client Version: v1.35.9"; the pin has no "v".
+if [[ "${INSTALL_KUBECTL:-false}" == "true" ]]; then
+    check_pin kubectl "${KUBECTL_VERSION:-}" \
+        "$(kubectl version --client 2>/dev/null | awk 'NR == 1 { sub(/^v/, "", $NF); print $NF }')"
+fi
 
 # actionlint shellchecks `run:` blocks only when it finds shellcheck on PATH,
 # and skips them silently when it does not. An unquoted variable in a step has

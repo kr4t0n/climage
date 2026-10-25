@@ -98,12 +98,14 @@ jobs:
               INSTALL_BROWSER=true
               INSTALL_GO=true
               INSTALL_RUST=true
+              INSTALL_KUBECTL=true
           - variant: full-argus
             build_args: |
               INSTALL_ARGUS=true
               INSTALL_BROWSER=true
               INSTALL_GO=true
               INSTALL_RUST=true
+              INSTALL_KUBECTL=true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -163,12 +165,14 @@ jobs:
               INSTALL_BROWSER=true
               INSTALL_GO=true
               INSTALL_RUST=true
+              INSTALL_KUBECTL=true
           - variant: full-argus
             build_args: |
               INSTALL_ARGUS=true
               INSTALL_BROWSER=true
               INSTALL_GO=true
               INSTALL_RUST=true
+              INSTALL_KUBECTL=true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
