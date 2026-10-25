@@ -543,9 +543,16 @@ variants table is the registry figure, and it comes from Docker Hub, not from
 `inspect`. The check that settles it: CI reports 1.9 GB for the base build,
 against a README that lists 2.0 GB uncompressed and 698 MB compressed.
 
-Measured on amd64 in CI, the four variants are 1.5 GB (`slim`), 2.2 GB
-(`base`), and 3.0 GB for both `full` and `full-argus`; arm64 runs up to 0.2 GB
-smaller (1.5, 2.1, 2.8 and 2.8 GB).
+That holds only on the arm64 runners now (Ubuntu 24.04, Docker 28, overlay2).
+`ubuntu-latest`, the amd64 runner, moved to Ubuntu 26.04 with Docker 29.4.2 and
+the containerd image store, and there the same command prints a figure that
+matches the compressed registry size instead: 810M for `base`, against 811 MiB
+on Docker Hub. Until the size step changes, take amd64 uncompressed figures from
+the registry: sum the file sizes in each layer's `tar tv` listing.
+
+The four variants are 1.5 GB (`slim`), 2.2 GB (`base`), and 3.1 GB for both
+`full` and `full-argus` on amd64, the last two computed from the registry; arm64
+runs up to 0.2 GB smaller (1.5, 2.1, 2.9 and 2.9 GB in CI).
 
 The CI figure is rounded *up* — `numfmt --to=iec` rounds away from zero, so
 2,147,483,649 bytes prints as `2.1G` — which makes step changes look up to
@@ -558,9 +565,10 @@ all in three layers: pnpm +25.0, agent CLIs +9.5, the apt layer +1.8.
 Refreshing the compressed column has its own trap: Docker Hub's tag API reports
 `full_size` for one architecture only — arm64, the smaller — so read
 `.images[]` and pick `amd64` explicitly, or the table understates the image by
-tens of megabytes. The breakdown: the Go and Rust toolchains account for nearly
-all of the ~0.8 GB between `base` and `full` (the browser libraries are ~18 MB
-of it), of which Go's `/usr/local/go` is 282 MB, leaving Rust the larger half.
+tens of megabytes. The breakdown: the Go and Rust toolchains account for most
+of the ~0.9 GB between `base` and `full` (the browser libraries are ~18 MB of
+it and kubectl 59 MB), of which Go's `/usr/local/go` is 282 MB, leaving Rust
+the larger half.
 `full-argus` adds only the argus-sidecar binary on top — 12 MB uncompressed,
 5 MB in the registry — which is why the two share an uncompressed figure. Then
 agent CLIs ~680 MB of native binaries (Claude Code 245 MB and Codex 432 MB as

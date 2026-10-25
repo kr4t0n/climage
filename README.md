@@ -126,11 +126,12 @@ something it does not have.
 | --- | --- | --- | --- |
 | `latest` | everything in the table above except the Go and Rust toolchains and `kubectl` | 2.2 GB | 811 MB |
 | `slim` | no media or build-tool packages | 1.5 GB | 576 MB |
-| `full` | `latest` plus the Go and Rust toolchains, `kubectl` and the headless-browser libraries | 3.0 GB | 1118 MB |
-| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.0 GB | 1123 MB |
+| `full` | `latest` plus the Go and Rust toolchains, `kubectl` and the headless-browser libraries | 3.1 GB | 1118 MB |
+| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.1 GB | 1123 MB |
 
-Both columns are amd64: uncompressed as the CI size step measures it, compressed
-as Docker Hub reports the pushed image. arm64 runs slightly smaller in both.
+Both columns are amd64: uncompressed is the total size of the image's files,
+compressed is what Docker Hub reports for the pushed image. arm64 runs slightly
+smaller in both.
 The Go and Rust toolchains account for most of the difference between `full`
 and `latest` (307 MB compressed, of which `kubectl` is 17 MB), so pull `latest`
 unless you need them.
