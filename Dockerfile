@@ -14,6 +14,9 @@
 #   actionlint
 #   kubectl          -> optional Kubernetes client, from a verified release; both
 #                       `full` variants turn it on
+#   helm + helmfile  -> optional Helm 3 client with the helm-diff plugin, and
+#                       helmfile, from verified releases; both `full` variants
+#                       turn them on
 #
 # All versions are build args so they can be pinned per build and bumped by
 # Dependabot in one place. See README.md for the supported matrix.
@@ -523,6 +526,82 @@ RUN if [ "${INSTALL_KUBECTL}" = "true" ]; then \
         && rm -rf "${tmp}"; \
     fi
 
+# --- Helm -------------------------------------------------------------------
+# helm, the helm-diff plugin and helmfile, off by default — both `full` variants
+# turn them on. helm stays on the 3.x line: under Helm 4, `helm diff upgrade`
+# renders with --dry-run=server unless told otherwise, so a chart's `lookup`
+# calls read the live cluster, where Helm 3 renders on the client. See
+# AGENTS.md. Each version ARG sits right before its RUN, for the cache reason
+# kubectl's do, so a bump rebuilds only its own layer and those below it.
+ARG INSTALL_HELM=false
+ARG HELM_VERSION=3.21.4
+# get.helm.sh serves a `.sha256sum` beside each tarball, in sha256sum's own
+# format. awk keeps the asset's line, and a file without one fails the check.
+RUN if [ "${INSTALL_HELM}" = "true" ]; then \
+        case "${TARGETARCH}" in \
+            amd64|arm64) arch="${TARGETARCH}" ;; \
+            *) echo "helm: no release asset for ${TARGETARCH}" >&2; exit 1 ;; \
+        esac \
+        && asset="helm-v${HELM_VERSION}-linux-${arch}.tar.gz" \
+        && tmp="$(mktemp -d)" \
+        && curl -fsSL "https://get.helm.sh/${asset}.sha256sum" -o "${tmp}/${asset}.sha256sum" \
+        && curl -fsSL "https://get.helm.sh/${asset}" -o "${tmp}/${asset}" \
+        && awk -v a="${asset}" -v d="${tmp}" '$2 == a { print $1 "  " d "/" a }' \
+            "${tmp}/${asset}.sha256sum" | sha256sum -c - \
+        && tar -xzf "${tmp}/${asset}" -C "${tmp}" "linux-${arch}/helm" \
+        && install -m 0755 "${tmp}/linux-${arch}/helm" /usr/local/bin/helm \
+        && rm -rf "${tmp}"; \
+    fi
+
+# helm finds plugins only in HELM_PLUGINS, whose default is under $HOME, where a
+# home volume would hide them. This directory is outside it and root-owned, like
+# /usr/local/bin, so neither `helm plugin install` nor `helm plugin update` can
+# replace the pinned helm-diff. CONFIGURATION.md shows how to add a plugin.
+ENV HELM_PLUGINS=/usr/local/lib/helm/plugins
+ARG HELM_DIFF_VERSION=3.15.15
+# The release tarball holds the plugin as helm loads it: plugin.yaml and the
+# binary, under diff/. Unpacking it is the whole install. `helm plugin install`
+# from the repository would run the plugin's install hook instead, which fetches
+# the newest release's binary with no checksum. --no-same-owner keeps the files
+# root's rather than the uid the release was packed as.
+RUN if [ "${INSTALL_HELM}" = "true" ]; then \
+        case "${TARGETARCH}" in \
+            amd64|arm64) arch="${TARGETARCH}" ;; \
+            *) echo "helm-diff: no release asset for ${TARGETARCH}" >&2; exit 1 ;; \
+        esac \
+        && base="https://github.com/databus23/helm-diff/releases/download/v${HELM_DIFF_VERSION}" \
+        && asset="helm-diff-linux-${arch}.tgz" \
+        && tmp="$(mktemp -d)" \
+        && curl -fsSL "${base}/helm-diff_${HELM_DIFF_VERSION}_checksums.txt" -o "${tmp}/checksums.txt" \
+        && curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}" \
+        && awk -v a="${asset}" -v d="${tmp}" '$2 == a { print $1 "  " d "/" a }' \
+            "${tmp}/checksums.txt" | sha256sum -c - \
+        && mkdir -p "${HELM_PLUGINS}" \
+        && tar -xzf "${tmp}/${asset}" -C "${HELM_PLUGINS}" --no-same-owner \
+            diff/plugin.yaml diff/bin/diff diff/LICENSE \
+        && rm -rf "${tmp}"; \
+    fi
+
+# helmfile runs the helm and helm-diff above, so it needs no `helmfile init`,
+# which installs helm and plugins of its own choosing when they are missing.
+ARG HELMFILE_VERSION=1.8.2
+RUN if [ "${INSTALL_HELM}" = "true" ]; then \
+        case "${TARGETARCH}" in \
+            amd64|arm64) arch="${TARGETARCH}" ;; \
+            *) echo "helmfile: no release asset for ${TARGETARCH}" >&2; exit 1 ;; \
+        esac \
+        && base="https://github.com/helmfile/helmfile/releases/download/v${HELMFILE_VERSION}" \
+        && asset="helmfile_${HELMFILE_VERSION}_linux_${arch}.tar.gz" \
+        && tmp="$(mktemp -d)" \
+        && curl -fsSL "${base}/helmfile_${HELMFILE_VERSION}_checksums.txt" -o "${tmp}/checksums.txt" \
+        && curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}" \
+        && awk -v a="${asset}" -v d="${tmp}" '$2 == a { print $1 "  " d "/" a }' \
+            "${tmp}/checksums.txt" | sha256sum -c - \
+        && tar -xzf "${tmp}/${asset}" -C "${tmp}" helmfile \
+        && install -m 0755 "${tmp}/helmfile" /usr/local/bin/helmfile \
+        && rm -rf "${tmp}"; \
+    fi
+
 # Everything the unprivileged user installs at runtime lands in $HOME, so a
 # volume mounted there carries it across container restarts: npm globals in
 # .npm-global, pnpm globals in .local/share/pnpm, uv tools in .uv. Every one of
@@ -550,13 +629,15 @@ RUN printf 'export PATH="%s/bin:%s/bin:%s:%s:%s/bin:/opt/uv/bin:/opt/rust/cargo/
 
 # Record which optional groups this image was built with, so the smoke test can
 # require exactly what is meant to be present and users can introspect a pull.
-# The linter and kubectl pins go along, for the smoke test to check each binary
-# against.
-RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_BROWSER=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\nINSTALL_GO=%s\nINSTALL_RUST=%s\nINSTALL_KUBECTL=%s\nHADOLINT_VERSION=%s\nACTIONLINT_VERSION=%s\nKUBECTL_VERSION=%s\n' \
+# The linter, kubectl and Helm pins go along, for the smoke test to check each
+# binary against.
+RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_BROWSER=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\nINSTALL_GO=%s\nINSTALL_RUST=%s\nINSTALL_KUBECTL=%s\nINSTALL_HELM=%s\nHADOLINT_VERSION=%s\nACTIONLINT_VERSION=%s\nKUBECTL_VERSION=%s\nHELM_VERSION=%s\nHELM_DIFF_VERSION=%s\nHELMFILE_VERSION=%s\n' \
         "${INSTALL_MEDIA}" "${INSTALL_BUILD_TOOLS}" "${INSTALL_BROWSER}" \
         "${INSTALL_CLAUDE_CODE}" "${INSTALL_CODEX}" "${INSTALL_SKILLS}" \
         "${INSTALL_ARGUS}" "${INSTALL_GO}" "${INSTALL_RUST}" "${INSTALL_KUBECTL}" \
+        "${INSTALL_HELM}" \
         "${HADOLINT_VERSION}" "${ACTIONLINT_VERSION}" "${KUBECTL_VERSION}" \
+        "${HELM_VERSION}" "${HELM_DIFF_VERSION}" "${HELMFILE_VERSION}" \
         > /etc/climage-build.env
 
 COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh

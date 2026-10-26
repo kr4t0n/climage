@@ -20,7 +20,7 @@ it to Docker Hub. There is no application code.
 | Python toolchain | `uv`, `uvx`, `ruff` |
 | Go toolchain | `go`, `gofmt` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
 | Rust toolchain | `rustc`, `cargo`, `rustup`, `clippy`, `rustfmt`, `cargo audit` — off by default, in the [`full` and `full-argus`](#image-variants) variants |
-| Kubernetes | `kubectl`, with `kubectl kustomize` built in — off by default, in the [`full` and `full-argus`](#kubernetes) variants |
+| Kubernetes | `kubectl`, with `kubectl kustomize` built in, `helm` with the `helm diff` plugin, and `helmfile` — off by default, in the [`full` and `full-argus`](#kubernetes) variants |
 | Search & text | `rg` (ripgrep), `fd`, `bat`, `jq`, `tree`, `file`, `less`, `diff`, `patch`, `moreutils` |
 | Media & documents | `ffmpeg`, `ffprobe`, `convert` (ImageMagick), `pdftotext` (poppler) |
 | VCS & network | `git`, `git-lfs`, `gh`, `ssh`, `curl`, `wget`, `rsync`, `dig`, `ping`, `nc`, `socat` |
@@ -124,17 +124,17 @@ something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
-| `latest` | everything in the table above except the Go and Rust toolchains and `kubectl` | 2.2 GB | 811 MB |
-| `slim` | no media or build-tool packages | 1.5 GB | 576 MB |
-| `full` | `latest` plus the Go and Rust toolchains, `kubectl` and the headless-browser libraries | 3.1 GB | 1118 MB |
-| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.1 GB | 1123 MB |
+| `latest` | everything in the table above except the Go and Rust toolchains and the Kubernetes tools | 2.2 GB | 809 MB |
+| `slim` | no media or build-tool packages | 1.5 GB | 574 MB |
+| `full` | `latest` plus the Go and Rust toolchains, the Kubernetes tools and the headless-browser libraries | 3.4 GB | 1214 MB |
+| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.4 GB | 1219 MB |
 
 Both columns are amd64: uncompressed is the total size of the image's files,
 compressed is what Docker Hub reports for the pushed image. arm64 runs slightly
 smaller in both.
 The Go and Rust toolchains account for most of the difference between `full`
-and `latest` (307 MB compressed, of which `kubectl` is 17 MB), so pull `latest`
-unless you need them.
+and `latest` (405 MB compressed), and the Kubernetes tools for 115 MB of it,
+helmfile alone 47 MB. Pull `latest` unless you need them.
 
 ```bash
 docker pull kr4t0n/climage:full
@@ -181,6 +181,15 @@ supports API servers one minor older or newer than itself, so check your
 cluster's version before relying on it. The image carries no kubeconfig and no
 credentials: kubectl reads `~/.kube/config` or `KUBECONFIG` as usual, and a
 volume mounted at `/home/climage` persists both the config and kubectl's cache.
+
+They also ship Helm 3 (`HELM_VERSION`, 3.21 at present) with the
+[helm-diff](https://github.com/databus23/helm-diff) plugin, and
+[helmfile](https://github.com/helmfile/helmfile). `helm diff upgrade` renders
+the chart on the client by default, and `helmfile diff` and `helmfile apply` use
+it. The plugin lives outside `$HOME`, in the directory `HELM_PLUGINS` names, so
+a home volume cannot hide it. Everything else helm keeps, such as repositories
+and the chart cache, stays under `$HOME` and persists with the volume. To add
+another plugin, see [Helm plugins](CONFIGURATION.md#helm-plugins).
 
 ## Agent skills
 

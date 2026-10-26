@@ -31,6 +31,10 @@ values in the `Dockerfile`; credentials are listed by name only.
 | `CARGO_AUDIT_SHA256_AMD64`, `CARGO_AUDIT_SHA256_ARM64` | release digests | SHA-256 of each architecture's cargo-audit tarball; upstream publishes no checksum list, so the pins live here |
 | `INSTALL_KUBECTL` | `false` | `kubectl`, the Kubernetes client, from the Kubernetes release; on in both `full` variants |
 | `KUBECTL_VERSION` | `1.35.9` | Exact kubectl release, verified against the SHA-256 published beside it. Follows the minor of the cluster the `full` variants run on, since kubectl supports one minor of skew either way |
+| `INSTALL_HELM` | `false` | `helm`, the helm-diff plugin and `helmfile`, from their releases; on in both `full` variants |
+| `HELM_VERSION` | `3.21.4` | Exact Helm release, verified against the SHA-256 published beside it. Stays on Helm 3, where `helm diff upgrade` renders on the client by default; see [Helm plugins](#helm-plugins) |
+| `HELM_DIFF_VERSION` | `3.15.15` | Exact [helm-diff](https://github.com/databus23/helm-diff) release, verified against its checksum list and unpacked into `HELM_PLUGINS` |
+| `HELMFILE_VERSION` | `1.8.2` | Exact [helmfile](https://github.com/helmfile/helmfile) release, verified against its checksum list |
 | `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar`; on only in the `full-argus` variant |
 | `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in both `full` variants — ~18 MB, since the media group already provides most of the chain |
 | `ARGUS_VERSION` | `0.3.6` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
@@ -51,14 +55,15 @@ keeps its default.
 | --- | --- | --- |
 | `base` | `latest` | none |
 | `slim` | `slim` | `INSTALL_MEDIA=false`, `INSTALL_BUILD_TOOLS=false` |
-| `full` | `full` | `INSTALL_BROWSER=true`, `INSTALL_GO=true`, `INSTALL_RUST=true`, `INSTALL_KUBECTL=true` |
-| `full-argus` | `full-argus` | `full`'s four, plus `INSTALL_ARGUS=true` |
+| `full` | `full` | `INSTALL_BROWSER=true`, `INSTALL_GO=true`, `INSTALL_RUST=true`, `INSTALL_KUBECTL=true`, `INSTALL_HELM=true` |
+| `full-argus` | `full-argus` | `full`'s five, plus `INSTALL_ARGUS=true` |
 
 `make build VARIANT=<variant>` passes them for you. With Docker directly:
 
 ```bash
 docker build --build-arg INSTALL_BROWSER=true --build-arg INSTALL_GO=true \
-    --build-arg INSTALL_RUST=true --build-arg INSTALL_KUBECTL=true -t climage:full .
+    --build-arg INSTALL_RUST=true --build-arg INSTALL_KUBECTL=true \
+    --build-arg INSTALL_HELM=true -t climage:full .
 docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=false -t climage:slim .
 ```
 
@@ -74,9 +79,38 @@ docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=fal
 | `GOPATH` / `GOBIN` | `/home/climage/.go`, `/home/climage/.go/bin` | Where `go install` puts binaries, and the root of all Go state — under `$HOME`, so a home volume persists it |
 | `GOCACHE` / `GOENV` | `/home/climage/.go/cache`, `/home/climage/.go/env` | Moved off their `~/.cache` and `~/.config` defaults so everything Go writes lives in `~/.go`. `GOMODCACHE` follows `GOPATH` to `~/.go/pkg/mod` |
 | `CARGO_INSTALL_ROOT` | `/home/climage/.cargo` | Where `cargo install` puts binaries, for the same reason. The toolchain itself stays in `/opt/rust` |
+| `HELM_PLUGINS` | `/usr/local/lib/helm/plugins` | Where helm finds plugins: helm-diff in both `full` variants. Root-owned and outside `$HOME`; see [Helm plugins](#helm-plugins) |
 | `LANG` | `en_US.UTF-8` | Locale is generated in the image |
 | `SHELL` | `/bin/bash` | Shell that agents and tools spawn; without it they fall back to `/bin/sh` (dash) |
 | `DISABLE_AUTOUPDATER` | `1` | Turns off Claude Code's self-update; see [Agent CLI updates](#agent-cli-updates) |
+
+### Helm plugins
+
+Both `full` variants unpack helm-diff into `/usr/local/lib/helm/plugins`, the
+directory `HELM_PLUGINS` names. It is root-owned, so the pinned plugin is the
+one that runs: `helm plugin install` there fails with `permission denied`, and
+`helm plugin update diff` fails because the plugin was unpacked from its
+release rather than cloned. helm's other state (repositories, the registry
+login, the chart cache) stays at its defaults under `$HOME`.
+
+To add a plugin, install it into a directory under `$HOME`, then list both
+directories, separated by a colon, for helm to load:
+
+```bash
+HELM_PLUGINS="$HOME/.local/share/helm/plugins" helm plugin install <plugin URL>
+export HELM_PLUGINS="/usr/local/lib/helm/plugins:$HOME/.local/share/helm/plugins"
+```
+
+Helm 3 loads plugins from every directory in the list but installs into
+`HELM_PLUGINS` as a single path: with the list set, `helm plugin install` writes
+into a directory named after the whole list, where helm never looks. A home
+volume keeps the second directory.
+
+Helm stays on the 3.x line on purpose. Under Helm 4, `helm diff upgrade` without
+a `--dry-run` flag renders the chart with `--dry-run=server`, so its `lookup`
+calls read live objects from the cluster, Secrets included. Under Helm 3 it
+renders on the client, where `lookup` returns nothing. Pass
+`--three-way-merge-mode client` for a three-way merge that only reads.
 
 ## Agent CLI updates
 

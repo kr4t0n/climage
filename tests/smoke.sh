@@ -66,6 +66,8 @@ add_group "${INSTALL_RUST:-false}" "rustc --version" "cargo --version" \
     "rustfmt --version" "clippy-driver --version" "cargo-audit --version"
 # --client keeps kubectl from looking for a cluster, which no smoke run may reach.
 add_group "${INSTALL_KUBECTL:-false}" "kubectl version --client"
+# Helm 3's `version` is client-only.
+add_group "${INSTALL_HELM:-false}" "helm version --short" "helmfile --version"
 
 # The browser group installs shared libraries, not commands, so it is checked
 # against the linker cache rather than PATH. These are the names Chromium fails
@@ -175,6 +177,29 @@ check_pin actionlint "${ACTIONLINT_VERSION:-}" \
 if [[ "${INSTALL_KUBECTL:-false}" == "true" ]]; then
     check_pin kubectl "${KUBECTL_VERSION:-}" \
         "$(kubectl version --client 2>/dev/null | awk 'NR == 1 { sub(/^v/, "", $NF); print $NF }')"
+fi
+# helm reports "v3.21.4" and helmfile "helmfile version 1.8.2". `helm plugin
+# list` reads only plugin.yaml, so `helm diff version` is asked as well: it runs
+# the plugin's binary, which helm finds through HELM_PLUGINS.
+if [[ "${INSTALL_HELM:-false}" == "true" ]]; then
+    check_pin helm "${HELM_VERSION:-}" \
+        "$(helm version --template '{{.Version}}' 2>/dev/null | sed 's/^v//')"
+    check_pin "diff plugin" "${HELM_DIFF_VERSION:-}" \
+        "$(helm plugin list 2>/dev/null | awk '$1 == "diff" { print $2 }')"
+    check_pin "helm diff" "${HELM_DIFF_VERSION:-}" "$(helm diff version 2>/dev/null)"
+    check_pin helmfile "${HELMFILE_VERSION:-}" \
+        "$(helmfile --version 2>/dev/null | awk 'NR == 1 { print $NF }')"
+
+    # The plugin directory must stay outside $HOME, where a volume mounted over
+    # the home directory would hide helm-diff.
+    if [[ -n "${HELM_PLUGINS:-}" && "${HELM_PLUGINS}" != "${HOME}"/* \
+        && -r "${HELM_PLUGINS}/diff/plugin.yaml" ]]; then
+        printf 'ok    %-14s %s, outside %s\n' "helm plugins" "${HELM_PLUGINS}" "${HOME}"
+    else
+        printf 'FAIL  %-14s HELM_PLUGINS is %s, expected diff/ in a directory outside %s\n' \
+            "helm plugins" "${HELM_PLUGINS:-<unset>}" "${HOME}"
+        failed=$((failed + 1))
+    fi
 fi
 
 # actionlint shellchecks `run:` blocks only when it finds shellcheck on PATH,
@@ -396,6 +421,23 @@ if [[ "${INSTALL_RUST:-false}" == "true" ]]; then
         printf 'FAIL  %-14s cargo cannot dispatch to cargo-audit\n' "cargo audit"
         failed=$((failed + 1))
     fi
+fi
+
+# helmfile proves itself by driving helm: it renders the chart `helm create`
+# writes, from a local path and with --skip-deps, so nothing reaches a chart
+# repository. `helm template` renders on the client and never asks a cluster.
+if [[ "${INSTALL_HELM:-false}" == "true" ]]; then
+    tmp=$(mktemp -d)
+    printf 'releases:\n  - name: smoke\n    chart: ./smoke\n' > "${tmp}/helmfile.yaml"
+    if rendered=$(cd "${tmp}" && helm create smoke >/dev/null \
+            && helmfile template --skip-deps 2>/dev/null) \
+        && [[ "${rendered}" == *"kind: Deployment"* ]]; then
+        printf 'ok    %-14s renders a chart through helm\n' "helmfile"
+    else
+        printf 'FAIL  %-14s could not render a chart through helm\n' "helmfile"
+        failed=$((failed + 1))
+    fi
+    rm -rf "${tmp}"
 fi
 
 if [[ "${INSTALL_BROWSER:-false}" == "true" ]]; then
