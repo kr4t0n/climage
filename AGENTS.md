@@ -38,8 +38,9 @@ Five inputs converge on one final stage:
   both.
 - **Verified release tarballs** — binaries downloaded by pinned release and
   checked by SHA-256 before install: gitleaks, hadolint and actionlint in every
-  variant, cargo-audit in the two Rust variants, kubectl in both `full`
-  variants, argus in `full-argus`.
+  variant, cargo-audit in the two Rust variants, kubectl, helm, the
+  helm-diff plugin and helmfile in both `full` variants, argus in
+  `full-argus`.
 - **apt layer** — Debian packages for search, media, documents, VCS, build, and
   shell tooling, plus the GitHub CLI from its own apt repository.
 
@@ -107,15 +108,26 @@ a malformed line, which fails the build. Its paths already use Docker's `amd64`
 and `arm64`. The pkgs.k8s.io apt repository would add a signing key and a
 second package source for one binary, so the image uses neither.
 
+helm, helm-diff and helmfile take the same shape. helm comes from get.helm.sh,
+whose `.sha256sum` beside each tarball is already in sha256sum's format;
+helm-diff and helmfile come from their GitHub releases, each with a checksum
+list. All three name their assets with Docker's `amd64` and `arm64`. helm-diff
+is a plugin, and its release tarball is the plugin as helm loads it, so the
+build unpacks it into `HELM_PLUGINS` rather than running `helm plugin install`.
+Installing from the repository runs the plugin's install hook, which downloads
+the binary from `releases/latest` with no checksum, so it neither pins nor
+verifies.
+
 **The image is the global layer: runtimes and launchers. Projects hold the
 rest.** The image pins what a project calls directly — node, uv, pnpm,
 pre-commit, gitleaks, hadolint and actionlint in every variant, plus Go, cargo,
-cargo-audit and kubectl in `full` and `full-argus`. A project holds everything
-those launchers run, with its configuration and locks: Python tools as dev
-dependencies in `uv.lock`, run with `uv run`; frontend tools as devDependencies
-in its lockfile; Go tools as `tool` lines in `go.mod`, run with `go tool`;
-commit hooks pinned by `rev` in `.pre-commit-config.yaml`. A tool earns a place
-in the image by being a launcher, or by sitting outside every manifest.
+cargo-audit, kubectl, helm and helmfile in `full` and `full-argus`. A project
+holds everything those launchers run, with its configuration and locks: Python
+tools as dev dependencies in `uv.lock`, run with `uv run`; frontend tools as
+devDependencies in its lockfile; Go tools as `tool` lines in `go.mod`, run with
+`go tool`; commit hooks pinned by `rev` in `.pre-commit-config.yaml`. A tool
+earns a place in the image by being a launcher, or by sitting outside every
+manifest.
 
 gitleaks is a Go binary that commit hooks call from `PATH` — husky hooks run it
 directly, and pre-commit's `gitleaks-system` hook expects it — and without one,
@@ -132,6 +144,11 @@ kubectl sits outside every manifest too. The version it has to match is a
 cluster's, not a project's, and a repository of Kubernetes manifests has no
 lockfile that could hold it. It is the one pin here that follows something
 outside the image; see the gotcha on it below.
+
+helm and helmfile are launchers: helm renders and diffs a project's charts, and
+helmfile runs helm for a project's `helmfile.yaml`. Neither a chart nor a
+helmfile has a lockfile that could pin either one. helm-diff is a helm plugin,
+and helm keeps no manifest of its plugins at all.
 
 pre-commit is the launcher for a project's hooks, so projects take it from the
 image rather than pin it, Python projects included. The project pins the hooks
@@ -153,15 +170,15 @@ carrying in every image; govulncheck is a `tool` line in `go.mod`, which
 
 **Four variants, and `base` is the one that publishes as `latest`.** The ladder
 is `slim` (no media or build-tool apt groups) → `base` → `full` (base plus the
-headless-browser libraries, the Go and Rust toolchains and kubectl — the
-languages dominate its size) → `full-argus` (`full` plus first-party tooling).
-argus is the one component only argus deployments want, so it rides on its own
-tag rather than making every `full` consumer carry it; `full` therefore means
-"every general-purpose toolchain", and `full-argus` is the only image with
-`argus-sidecar`. The CI matrix name for the default variant is `base`, not
-`full`, because `full` is a published tag meaning something else. Only the tag
-names are a public contract; the matrix names are internal and appear in cache
-scopes and digest artifact names.
+headless-browser libraries, the Go and Rust toolchains, kubectl, helm,
+helm-diff and helmfile — the languages dominate its size) → `full-argus`
+(`full` plus first-party tooling). argus is the one component only argus
+deployments want, so it rides on its own tag rather than making every `full`
+consumer carry it; `full` therefore means "every general-purpose toolchain",
+and `full-argus` is the only image with `argus-sidecar`. The CI matrix name for
+the default variant is `base`, not `full`, because `full` is a published tag
+meaning something else. Only the tag names are a public contract; the matrix
+names are internal and appear in cache scopes and digest artifact names.
 
 **Optional `COPY --from` needs a conditional stage, not a conditional `RUN`.**
 The apt groups are optional because a shell `if` can wrap `apt-get`. `COPY` has
@@ -259,9 +276,10 @@ promotes each group to *required* when it was enabled — so a slim build passes
 while a default build that silently lost ffmpeg still fails. Marking those tools
 merely "optional" in the test would have hidden exactly the regression the test
 exists to catch. The same file records `HADOLINT_VERSION`,
-`ACTIONLINT_VERSION` and `KUBECTL_VERSION`, and the smoke test fails when a
-binary reports another version. kubectl's pin is checked only in the variants
-whose `INSTALL_KUBECTL` put the binary there.
+`ACTIONLINT_VERSION`, `KUBECTL_VERSION`, `HELM_VERSION`, `HELM_DIFF_VERSION`
+and `HELMFILE_VERSION`, and the smoke test fails when a binary reports another
+version. kubectl's pin is checked only in the variants whose `INSTALL_KUBECTL`
+put the binary there, and the three Helm pins only where `INSTALL_HELM` did.
 
 **Smoke test as the contract.** The image's promise is "these commands exist and
 work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
@@ -550,9 +568,9 @@ matches the compressed registry size instead: 810M for `base`, against 811 MiB
 on Docker Hub. Until the size step changes, take amd64 uncompressed figures from
 the registry: sum the file sizes in each layer's `tar tv` listing.
 
-The four variants are 1.5 GB (`slim`), 2.2 GB (`base`), and 3.1 GB for both
+The four variants are 1.5 GB (`slim`), 2.2 GB (`base`), and 3.4 GB for both
 `full` and `full-argus` on amd64, the last two computed from the registry; arm64
-runs up to 0.2 GB smaller (1.5, 2.1, 2.9 and 2.9 GB in CI).
+runs up to 0.2 GB smaller (1.5, 2.1, 3.2 and 3.2 GB in CI).
 
 The CI figure is rounded *up* — `numfmt --to=iec` rounds away from zero, so
 2,147,483,649 bytes prints as `2.1G` — which makes step changes look up to
@@ -566,9 +584,9 @@ Refreshing the compressed column has its own trap: Docker Hub's tag API reports
 `full_size` for one architecture only — arm64, the smaller — so read
 `.images[]` and pick `amd64` explicitly, or the table understates the image by
 tens of megabytes. The breakdown: the Go and Rust toolchains account for most
-of the ~0.9 GB between `base` and `full` (the browser libraries are ~18 MB of
-it and kubectl 59 MB), of which Go's `/usr/local/go` is 282 MB, leaving Rust
-the larger half.
+of the ~1.2 GB between `base` and `full` (the browser libraries are ~18 MB of
+it, kubectl 59 MB, and helm, helm-diff and helmfile 323 MB), of which Go's
+`/usr/local/go` is 282 MB, leaving Rust the larger half.
 `full-argus` adds only the argus-sidecar binary on top — 12 MB uncompressed,
 5 MB in the registry — which is why the two share an uncompressed figure. Then
 agent CLIs ~680 MB of native binaries (Claude Code 245 MB and Codex 432 MB as
@@ -578,11 +596,14 @@ pnpm 12 ships a self-contained native executable rather than JavaScript, so its
 npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
 21 MB static binary to every variant, hadolint 56 MB (60 MB on arm64; 12 MB
 compressed), actionlint 6 MB, and pre-commit's tool environment 18 MB;
-cargo-audit adds 15 MB (13 MB on arm64) to the two Rust variants, and kubectl
-59 MB (55 MB on arm64; 17 MB compressed) to both `full` variants. Only the group
-flags move the needle; trimming individual utilities does not. `python3-dev`/`python3-venv` were dropped as
-redundant — `python3` resolves to uv's interpreter, so C extensions build
-against uv's headers, not Debian's 3.11 ones.
+cargo-audit adds 15 MB (13 MB on arm64) to the two Rust variants. kubectl adds
+59 MB (55 MB on arm64; 17 MB compressed) to both `full` variants, helm 59 MB
+(55 MB; 18 MB), helm-diff 83 MB (78 MB; 33 MB), which ships unstripped, and
+helmfile 181 MB (171 MB; 47 MB), whose module requires both the Helm 3 and the
+Helm 4 libraries. Only the group flags move the needle; trimming individual
+utilities does not. `python3-dev`/`python3-venv` were dropped as redundant —
+`python3` resolves to uv's interpreter, so C extensions build against uv's
+headers, not Debian's 3.11 ones.
 
 **dpkg exclusions only affect later installs.** `/etc/dpkg/dpkg.cfg.d/01-climage-nodoc`
 drops docs and manpages, so it must be written before the first `apt-get
@@ -701,6 +722,52 @@ The smoke test runs `kubectl version --client` and nothing else: without
 `--client`, kubectl looks for a server, and nothing in the build or in CI may
 contact a cluster. kubectl's own state, `~/.kube/config` and the discovery
 cache in `~/.kube/cache`, sits under `$HOME`, so a home volume keeps it.
+
+**Helm stays on 3.x, because helm-diff's default changes under Helm 4.**
+`helm diff upgrade` with no `--dry-run` flag renders the chart through
+`helm template`. Under Helm 3 it passes `--dry-run=client`, so `lookup` returns
+nothing and the chart is rendered on the client. Under Helm 4, helm-diff passes
+`--dry-run=server` instead (`cmd/helm.go` at v3.15.15, helm-diff issue 894),
+and every `lookup` in the chart reads the live cluster, Secrets included.
+Deployments that allow `helm diff` against a production cluster only with
+client-side rendering need Helm 3. A move to Helm 4 is the deployment owner's
+decision, not a routine bump. `HELM_VERSION` follows the Helm minor the
+deployed charts are linted with in their own CI (3.21), and takes the newest
+patch of it.
+
+**Helm plugins live outside `$HOME`, and Helm 3 installs into one directory
+only.** `HELM_PLUGINS` is `/usr/local/lib/helm/plugins`, root-owned, so a home
+volume cannot hide helm-diff and nothing at runtime can replace it:
+`helm plugin install` fails with `permission denied`, and `helm plugin update
+diff` fails with `cannot get information about plugin source`, because the
+plugin was unpacked rather than cloned. Helm 3 loads plugins from every
+directory in a colon-separated `HELM_PLUGINS` but installs into the variable
+as a single path, so with a list set, `helm plugin install` writes into a
+directory named after the whole list (checked with 3.21.4). CONFIGURATION.md
+shows the two-step install into `$HOME`. The variable must not name a path
+under `/home/climage`: an image that derives from this one and renames the
+user has to override every `ENV` that does. helm's other directories stay at
+their `$HOME` defaults, and the build runs no helm command that would create
+them.
+
+The smoke test checks each pin, asks `helm diff version` as well as
+`helm plugin list` because the list reads only `plugin.yaml`, and has helmfile
+render a `helm create` chart through helm with `--skip-deps`. None of it can
+reach a cluster or a chart repository.
+
+**helm, helm-diff and helmfile are bumped by hand, and each bump re-checks the
+other two.** Dependabot sees no `FROM` and no manifest for any of them.
+helm-diff states the oldest Helm it supports in its README (3.18 at 3.15.15),
+and its release notes record each move of the Helm releases its CI tests
+(3.21.4 at 3.15.12, 3.22.0 from 3.15.13); helmfile states its own floor as
+`HelmRequiredVersion` in `pkg/app/init.go` (3.18.6 at 1.8.2). The build
+extracts `diff/plugin.yaml`, `diff/bin/diff` and `diff/LICENSE` by name, so a
+release that moves them fails the build: 3.15.14 wrapped them in a directory
+named after the archive, and 3.15.15 moved them back. Check `tar tzf` on the
+new tarball before bumping. The image needs no `helmfile init`: it checks helm
+and helm-diff against helmfile's own floors, which the pins meet, then offers to
+install four more plugins (secrets, s3, helm-git, unittest) from their
+repositories with no checksum.
 
 **Host uid mismatch on bind mounts.** The image runs as uid 1000. On a host
 where the user is not 1000, files written into a mounted `/workspace` land with
