@@ -19,7 +19,7 @@ values in the `Dockerfile`; credentials are listed by name only.
 | `INSTALL_CLAUDE_CODE` | `true` | Set `false` to omit the Claude Code CLI |
 | `CLAUDE_CODE_VERSION` | `2.1.312` | Exact Claude Code version (npm `latest`) |
 | `INSTALL_CODEX` | `true` | Set `false` to omit the Codex CLI |
-| `CODEX_VERSION` | `0.162.1` | Exact Codex CLI version (npm `latest`) |
+| `CODEX_VERSION` | `0.165.0` | Exact Codex CLI version (npm `latest`) |
 | `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
 | `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
 | `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |

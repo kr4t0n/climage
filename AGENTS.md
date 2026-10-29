@@ -412,7 +412,7 @@ volume, `which -a claude` shows whether one is there, and
 
 **Codex's background daemon updates itself silently, so the image turns off its
 auto-start.** Since 0.157 (`daemon_auto_start`, now stable and default `true`,
-re-checked unchanged at 0.162.1), every interactive `codex` launch starts an
+re-checked unchanged at 0.165.0), every interactive `codex` launch starts an
 app-server daemon. The first start
 copies the running CLI package into `~/.codex/packages/app-server-daemon/` —
 424 MB on the home volume — with no prompt, and a companion `daemon-updater`
@@ -589,8 +589,8 @@ it, kubectl 59 MB, and helm, helm-diff and helmfile 323 MB), of which Go's
 `/usr/local/go` is 282 MB, leaving Rust the larger half.
 `full-argus` adds only the argus-sidecar binary on top — 12 MB uncompressed,
 5 MB in the registry — which is why the two share an uncompressed figure. Then
-agent CLIs ~710 MB of native binaries (Claude Code 280 MB and Codex 432 MB as
-of 2.1.312 / 0.162.1), ffmpeg's dependency tree 364 MB, the build-essential
+agent CLIs ~705 MB of native binaries (Claude Code 280 MB and Codex 425 MB as
+of 2.1.312 / 0.165.0), ffmpeg's dependency tree 364 MB, the build-essential
 chain 231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB —
 pnpm 12 ships a self-contained native executable rather than JavaScript, so its
 npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
