@@ -589,8 +589,8 @@ it, kubectl 59 MB, and helm, helm-diff and helmfile 323 MB), of which Go's
 `/usr/local/go` is 282 MB, leaving Rust the larger half.
 `full-argus` adds only the argus-sidecar binary on top — 12 MB uncompressed,
 5 MB in the registry — which is why the two share an uncompressed figure. Then
-agent CLIs ~680 MB of native binaries (Claude Code 245 MB and Codex 432 MB as
-of 2.1.296 / 0.162.1), ffmpeg's dependency tree 364 MB, the build-essential
+agent CLIs ~710 MB of native binaries (Claude Code 280 MB and Codex 432 MB as
+of 2.1.312 / 0.162.1), ffmpeg's dependency tree 364 MB, the build-essential
 chain 231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB —
 pnpm 12 ships a self-contained native executable rather than JavaScript, so its
 npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
@@ -858,6 +858,24 @@ line; `gh api 'repos/hadolint/hadolint-action/contents/Dockerfile?ref=<tag>'`
 reads it), and the hook's `rev` to the same tag. The smoke test checks the
 binary against the `ARG`, not against CI, so nothing fails when the two drift
 apart, and nothing checks the `rev` at all.
+
+**Brotli comes in three copies, and a Debian update patches only one.**
+Debian's `libbrotli1` serves curl, git's HTTPS transport and the font and
+image libraries. `node` and Claude Code's `claude.exe`, a Bun executable, each
+link a static copy of their own, which only a Node or Claude Code release can
+fix. gitleaks carries the Go port, `andybalholm/brotli`. CVE-2026-111497, a
+decoder out-of-bounds write, showed the split. Debian's fix
+(`1.0.9-2+deb12u1`) and Node 24.22.1 arrived with an ordinary rebuild, but
+Claude Code 2.1.296 still embedded Bun 1.4.3 with a decoder older than Brotli
+1.2.1. 2.1.312 embeds Bun 1.4.4 with the fix. The Go port gets the same bug
+only as a panic (GHSA-c9gr-gmg4-2vqv), and gitleaks decodes `br` only with
+`--max-archive-depth` set. The smoke test greps `node` and `claude.exe` for the
+error-code name Brotli 1.2.1 added, so a pin back to an older release fails
+CI. The SBOM attestation lists Debian's package, Node's version and gitleaks'
+Go module, but not Bun's copy. A static copy shows up only when the layers are
+grepped for Brotli's built-in dictionary (`timedownlifeleftbackcode`). The
+Codex, uv, cargo-audit, pnpm and argus binaries carried none at the pins of
+2026-10-29.
 
 **Image size is a real constraint.** `build-essential`, `ffmpeg`, and
 `imagemagick` dominate the footprint. The CI build reports the size on every

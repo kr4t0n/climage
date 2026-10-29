@@ -323,6 +323,23 @@ if [[ "${INSTALL_CODEX:-true}" == "true" ]]; then
     fi
 fi
 
+# node and Claude Code's Bun runtime each link a static Brotli of their own, so
+# Debian's patched libbrotli1 does not cover them. Brotli 1.2.1 fixed
+# CVE-2026-111497, a decoder out-of-bounds write on CISA's KEV list, and added
+# the error code named here, so a binary without the name has an older decoder:
+# node 24.21.0 and Claude Code 2.1.296 (Bun 1.4.3) lack it.
+brotli_bins=("node")
+if [[ "${INSTALL_CLAUDE_CODE:-true}" == "true" ]]; then brotli_bins+=("claude"); fi
+for cmd in "${brotli_bins[@]}"; do
+    bin=$(readlink -f "$(command -v "${cmd}")" 2>/dev/null || true)
+    if [[ -n "${bin}" ]] && grep -aq '_ERROR_FORMAT_BLOCK_SWITCH' "${bin}"; then
+        printf 'ok    %-14s %s has Brotli >= 1.2.1\n' "brotli ${cmd}" "${bin}"
+    else
+        printf 'FAIL  %-14s %s has a Brotli older than 1.2.1 (CVE-2026-111497)\n' "brotli ${cmd}" "${bin:-<none>}"
+        failed=$((failed + 1))
+    fi
+done
+
 # The runtime identity is part of the image's contract: uid 1000 keeps
 # bind-mounted host files sanely owned, and $HOME must match the account.
 # the shared `users` gid (100) is what lets an arbitrary-uid run keep group access.
