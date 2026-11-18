@@ -380,7 +380,7 @@ explicitly. This is done with plain symlinks rather than `uv python install
 
 **Both agent CLIs track npm `latest`, by choice.** `@anthropic-ai/claude-code`
 publishes `stable`, `latest`, and `next`, where `latest` equals `next` and runs
-ahead of `stable` — often by several weeks (2.1.286 vs 2.1.295 at the time of
+ahead of `stable` — often by several weeks (2.1.311 vs 2.1.327 at the time of
 writing). `@openai/codex` publishes no `stable` tag at all; its non-`latest`
 tags are alpha/beta and platform-specific builds. Rather than have the two CLIs
 follow different release trains, both pins follow `latest`. The trade-off is
@@ -412,7 +412,7 @@ volume, `which -a claude` shows whether one is there, and
 
 **Codex's background daemon updates itself silently, so the image turns off its
 auto-start.** Since 0.157 (`daemon_auto_start`, now stable and default `true`,
-re-checked unchanged at 0.165.0), every interactive `codex` launch starts an
+re-checked unchanged at 0.170.0), every interactive `codex` launch starts an
 app-server daemon. The first start
 copies the running CLI package into `~/.codex/packages/app-server-daemon/` —
 424 MB on the home volume — with no prompt, and a companion `daemon-updater`
@@ -433,7 +433,12 @@ The image writes `[features] daemon_auto_start = false` to
 outside `$HOME`, so a home volume cannot hide it. Interactive `codex` then runs
 its server in-process, as it did before 0.157. The smoke test asks `codex
 features list` for the effective value rather than grepping the file, so a
-release that stops reading the system layer fails CI. Explicit `codex agents`,
+release that stops reading the system layer fails CI. The flag has nearly gone
+once: during 0.168.0 Codex retired it, ignoring the configured value and leaving
+`--no-daemon` per launch as the only opt-out, then restored it before the
+release (openai/codex#58940, #59447). The smoke check fails on anything but
+`false`, so a retirement fails CI whether the flag drops out of the list or
+reverts to `true`. Explicit `codex agents`,
 `codex app-server daemon start` and `codex remote-control` still start the
 daemon, updater included; its own `auto_update_enabled` lives in
 `~/.codex/app-server-daemon/settings.json`, beyond the image's reach. `codex exec`
@@ -589,8 +594,8 @@ it, kubectl 59 MB, and helm, helm-diff and helmfile 323 MB), of which Go's
 `/usr/local/go` is 282 MB, leaving Rust the larger half.
 `full-argus` adds only the argus-sidecar binary on top — 12 MB uncompressed,
 5 MB in the registry — which is why the two share an uncompressed figure. Then
-agent CLIs ~705 MB of native binaries (Claude Code 280 MB and Codex 425 MB as
-of 2.1.312 / 0.165.0), ffmpeg's dependency tree 364 MB, the build-essential
+agent CLIs ~765 MB of native binaries (Claude Code 356 MB and Codex 408 MB as
+of 2.1.327 / 0.170.0), ffmpeg's dependency tree 364 MB, the build-essential
 chain 231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB —
 pnpm 12 ships a self-contained native executable rather than JavaScript, so its
 npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a

@@ -84,9 +84,9 @@ ARG PYTHON_VERSION=3.12
 # produce different images. Both CLIs track their npm `latest`; Claude Code also
 # publishes a slower `stable` tag, which this image deliberately does not use.
 ARG INSTALL_CLAUDE_CODE=true
-ARG CLAUDE_CODE_VERSION=2.1.312
+ARG CLAUDE_CODE_VERSION=2.1.327
 ARG INSTALL_CODEX=true
-ARG CODEX_VERSION=0.165.0
+ARG CODEX_VERSION=0.170.0
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.7.0
 ARG PNPM_VERSION=12.10.1
