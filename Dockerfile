@@ -84,9 +84,9 @@ ARG PYTHON_VERSION=3.12
 # produce different images. Both CLIs track their npm `latest`; Claude Code also
 # publishes a slower `stable` tag, which this image deliberately does not use.
 ARG INSTALL_CLAUDE_CODE=true
-ARG CLAUDE_CODE_VERSION=2.1.327
+ARG CLAUDE_CODE_VERSION=2.1.330
 ARG INSTALL_CODEX=true
-ARG CODEX_VERSION=0.170.0
+ARG CODEX_VERSION=0.171.0
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.7.0
 ARG PNPM_VERSION=12.10.1
@@ -473,6 +473,39 @@ RUN if [ "${INSTALL_CODEX}" = "true" ]; then \
             > /etc/codex/config.toml; \
     fi
 
+# The Antigravity CLI is a native binary, not an npm package. Its installer
+# takes whatever release Google's update service names at build time, and that
+# service's manifest is the only place a digest is published, for the newest
+# release alone, so the SHA-512s are pinned here. The binary goes root-owned
+# into /usr/local/bin: its self-updater installs into the binary's own
+# directory, and skips the update when the runtime user cannot write there.
+# Its ARGs sit here rather than at the top, so a bump rebuilds only this layer
+# and those below it.
+ARG INSTALL_ANTIGRAVITY=true
+ARG ANTIGRAVITY_VERSION=1.5.15
+ARG ANTIGRAVITY_BUILD=5514532022517760
+ARG ANTIGRAVITY_SHA512_AMD64=af3f0be58b8475940d79f9abea19e762ecc3d265ea9f56cff8dd805e27ba299b44a305a79504a7ffe6ebdfa29a294c56edc4caed1875990bfaf2fef1508ec8b0
+ARG ANTIGRAVITY_SHA512_ARM64=d64ad759781b50dfacfa7d9826c0ad469959d01bdf5a170acd4c83472eba31c677baf0052ac8ab48eef40f0d3f0e26057e752aabd24331c79f4c881d4b872125
+RUN if [ "${INSTALL_ANTIGRAVITY}" = "true" ]; then \
+        case "${TARGETARCH}" in \
+            amd64) asset=linux-x64/cli_linux_x64.tar.gz; sha="${ANTIGRAVITY_SHA512_AMD64}" ;; \
+            arm64) asset=linux-arm/cli_linux_arm64.tar.gz; sha="${ANTIGRAVITY_SHA512_ARM64}" ;; \
+            *) echo "agy: no release asset for ${TARGETARCH}" >&2; exit 1 ;; \
+        esac \
+        && tmp="$(mktemp -d)" \
+        && curl -fsSL -o "${tmp}/agy.tar.gz" \
+            "https://storage.googleapis.com/antigravity-public/antigravity-cli/${ANTIGRAVITY_VERSION}-${ANTIGRAVITY_BUILD}/${asset}" \
+        && echo "${sha}  ${tmp}/agy.tar.gz" | sha512sum -c - \
+        && tar -xzf "${tmp}/agy.tar.gz" -C "${tmp}" antigravity \
+        && install -m 0755 "${tmp}/antigravity" /usr/local/bin/agy \
+        && rm -rf "${tmp}"; \
+    fi
+
+# Upstream's documented off switch: it ends agy's update check before the
+# directory test. Only the literal "true" counts; "1", "TRUE" and "yes" leave
+# the check on.
+ENV AGY_CLI_DISABLE_AUTO_UPDATE=true
+
 # --- First-party tooling ----------------------------------------------------
 # argus ships plain release binaries next to a SHASUMS256.txt manifest, so this
 # fetches and verifies them directly instead of piping the project's installer
@@ -629,15 +662,16 @@ RUN printf 'export PATH="%s/bin:%s/bin:%s:%s:%s/bin:/opt/uv/bin:/opt/rust/cargo/
 
 # Record which optional groups this image was built with, so the smoke test can
 # require exactly what is meant to be present and users can introspect a pull.
-# The linter, kubectl and Helm pins go along, for the smoke test to check each
-# binary against.
-RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_BROWSER=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\nINSTALL_GO=%s\nINSTALL_RUST=%s\nINSTALL_KUBECTL=%s\nINSTALL_HELM=%s\nHADOLINT_VERSION=%s\nACTIONLINT_VERSION=%s\nKUBECTL_VERSION=%s\nHELM_VERSION=%s\nHELM_DIFF_VERSION=%s\nHELMFILE_VERSION=%s\n' \
+# The linter, kubectl, Helm and agy pins go along, for the smoke test to check
+# each binary against.
+RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_BROWSER=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_ANTIGRAVITY=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\nINSTALL_GO=%s\nINSTALL_RUST=%s\nINSTALL_KUBECTL=%s\nINSTALL_HELM=%s\nHADOLINT_VERSION=%s\nACTIONLINT_VERSION=%s\nKUBECTL_VERSION=%s\nHELM_VERSION=%s\nHELM_DIFF_VERSION=%s\nHELMFILE_VERSION=%s\nANTIGRAVITY_VERSION=%s\n' \
         "${INSTALL_MEDIA}" "${INSTALL_BUILD_TOOLS}" "${INSTALL_BROWSER}" \
-        "${INSTALL_CLAUDE_CODE}" "${INSTALL_CODEX}" "${INSTALL_SKILLS}" \
-        "${INSTALL_ARGUS}" "${INSTALL_GO}" "${INSTALL_RUST}" "${INSTALL_KUBECTL}" \
-        "${INSTALL_HELM}" \
+        "${INSTALL_CLAUDE_CODE}" "${INSTALL_CODEX}" "${INSTALL_ANTIGRAVITY}" \
+        "${INSTALL_SKILLS}" "${INSTALL_ARGUS}" "${INSTALL_GO}" "${INSTALL_RUST}" \
+        "${INSTALL_KUBECTL}" "${INSTALL_HELM}" \
         "${HADOLINT_VERSION}" "${ACTIONLINT_VERSION}" "${KUBECTL_VERSION}" \
         "${HELM_VERSION}" "${HELM_DIFF_VERSION}" "${HELMFILE_VERSION}" \
+        "${ANTIGRAVITY_VERSION}" \
         > /etc/climage-build.env
 
 COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
