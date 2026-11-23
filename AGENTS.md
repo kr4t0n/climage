@@ -40,7 +40,8 @@ Five inputs converge on one final stage:
   checked by SHA-256 before install: gitleaks, hadolint and actionlint in every
   variant, cargo-audit in the two Rust variants, kubectl, helm, the
   helm-diff plugin and helmfile in both `full` variants, argus in
-  `full-argus`.
+  `full-argus`. The Antigravity CLI, in every variant, is checked by SHA-512,
+  the only digest Google publishes for it.
 - **apt layer** — Debian packages for search, media, documents, VCS, build, and
   shell tooling, plus the GitHub CLI from its own apt repository.
 
@@ -117,6 +118,24 @@ build unpacks it into `HELM_PLUGINS` rather than running `helm plugin install`.
 Installing from the repository runs the plugin's install hook, which downloads
 the binary from `releases/latest` with no checksum, so it neither pins nor
 verifies.
+
+The Antigravity CLI takes the same shape for argus's reason. It has no npm
+package; Google's `install.sh` asks an update service
+(`https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_<arch>.json`)
+for the newest release's URL and SHA-512, so it cannot pin. The tarballs live
+in a public bucket under `antigravity-cli/<version>-<build>/`, where the build
+number differs per release, and nothing sits beside them: the manifest is the
+only published digest, and only for the newest release. The Dockerfile
+therefore pins `ANTIGRAVITY_VERSION`, `ANTIGRAVITY_BUILD` and one SHA-512 per
+architecture, as it does cargo-audit's SHA-256s. A bump reads both manifests
+(`linux_amd64`, `linux_arm64`), which give all four values; the bucket's
+`x-goog-hash` MD5 on a `HEAD` of each tarball is a cross-check from a second
+source. Assets are named `linux-x64/cli_linux_x64.tar.gz` and
+`linux-arm/cli_linux_arm64.tar.gz`, so the build maps `TARGETARCH` explicitly.
+Each tarball holds one file, `antigravity`, which the build installs as `agy`,
+the name the docs and installer use. The bucket does not list its contents;
+nixpkgs' `numtide/llm-agents.nix` pins earlier builds, if one is needed for a
+test.
 
 **The image is the global layer: runtimes and launchers. Projects hold the
 rest.** The image pins what a project calls directly — node, uv, pnpm,
@@ -276,10 +295,11 @@ promotes each group to *required* when it was enabled — so a slim build passes
 while a default build that silently lost ffmpeg still fails. Marking those tools
 merely "optional" in the test would have hidden exactly the regression the test
 exists to catch. The same file records `HADOLINT_VERSION`,
-`ACTIONLINT_VERSION`, `KUBECTL_VERSION`, `HELM_VERSION`, `HELM_DIFF_VERSION`
-and `HELMFILE_VERSION`, and the smoke test fails when a binary reports another
-version. kubectl's pin is checked only in the variants whose `INSTALL_KUBECTL`
-put the binary there, and the three Helm pins only where `INSTALL_HELM` did.
+`ACTIONLINT_VERSION`, `KUBECTL_VERSION`, `HELM_VERSION`, `HELM_DIFF_VERSION`,
+`HELMFILE_VERSION` and `ANTIGRAVITY_VERSION`, and the smoke test fails when a
+binary reports another version. kubectl's pin is checked only in the variants
+whose `INSTALL_KUBECTL` put the binary there, the three Helm pins only where
+`INSTALL_HELM` did, and agy's only where `INSTALL_ANTIGRAVITY` did.
 
 **Smoke test as the contract.** The image's promise is "these commands exist and
 work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
@@ -291,8 +311,8 @@ work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
   change that misses the smoke test is not covered by CI.
 - **User-facing configuration lives in `CONFIGURATION.md`**, not the README: a
   new or changed build arg or runtime `ENV` updates its table there, and a
-  change to either agent CLI's update handling updates its column in the Agent
-  CLI updates table, keeping both columns' rows the same.
+  change to any agent CLI's update handling updates its column in the Agent
+  CLI updates table, keeping every column's rows the same.
 - **Optional tooling** (anything behind a build arg) goes in the `OPTIONAL`
   array in the smoke test, which reports `skip` instead of failing.
 - Group apt packages by purpose and keep the grouping comment accurate.
@@ -386,7 +406,8 @@ tags are alpha/beta and platform-specific builds. Rather than have the two CLIs
 follow different release trains, both pins follow `latest`. The trade-off is
 deliberate: newer features, less soak time. Check `npm view <pkg> dist-tags`
 before bumping, and if a Claude Code release ever regresses, `stable` is the
-fallback channel to pin to.
+fallback channel to pin to. The Antigravity CLI is not on npm and has one
+channel, the release its update service's manifest names; its pin follows that.
 
 **Claude Code's self-update defeats the pin, so the image turns it off.** Left
 alone, Claude Code updates itself with `npm install -g`, which honours
@@ -400,7 +421,8 @@ matching how every other tool in the image is handled. Only the value `1`
 disables updates — `claude doctor` reports `0` and the empty string as enabled
 — so `0` is the documented opt-out, and the smoke test asserts the exact value.
 `skills` has no update mechanism at all. Codex has two, and the image turns
-both off by default — see the two Codex entries below.
+both off by default — see the two Codex entries below. The Antigravity CLI has
+one, stopped twice; see its entry after Codex's.
 
 The variable stops only the unattended update. `claude update`, run by hand,
 checks `DISABLE_UPDATES` alone (read from the 2.1.295 binary), which the image
@@ -491,6 +513,42 @@ key off and a stub `npm` on `PATH`, 0.162.0 still ran
 `npm install -g @openai/codex` — so it can shadow the pin, as a manual
 `claude update` can.
 
+**The Antigravity CLI's self-updater is stopped twice, and `agy update` only by
+the second stop.** On a launch, at most once every 15 minutes, agy checks
+Google's update service and installs into the directory the binary runs from.
+`AGY_CLI_DISABLE_AUTO_UPDATE=true` ends the check as it starts
+(`auto_updater.go:285`, logged as `Auto-update disabled via environment
+variable AGY_CLI_DISABLE_AUTO_UPDATE`). Only the literal `true` counts: with
+`1`, `TRUE` or `yes`, the check went on to the second stop. That stop is the
+install directory: a later check finds `/usr/local/bin` unwritable for the
+runtime user and logs `Directory /usr/local/bin is not fully accessible
+(readable: true, writable: false), skipping update` (`auto_updater.go:312`). A
+manual `agy update` ignores the variable but fails on the same check, and
+writes nothing into `$HOME`: no `~/.local/bin/agy`, the installer's default.
+So unlike Claude Code and Codex, a manual update cannot shadow the pin. All of
+this was measured as uid 1000 against a root-owned 1.5.14, which had a newer
+release to find, and the variable's two branches re-checked on 1.5.15. The
+variable stays although the directory alone blocks the install: it is
+upstream's documented switch, and it still holds in a derived image that makes
+`/usr/local/bin` writable. Each launch writes the decision to
+`~/.gemini/antigravity-cli/log/cli-<timestamp>.log`, and the smoke test reads it
+from `agy --log-file <file> agents`, which needs no login and no network.
+Upstream documents only `true`; third-party guides that say `1` are wrong.
+
+**The Antigravity CLI's amd64 build refuses CPUs without PCLMULQDQ.** It is
+built with Google's `go/sigill-fail-fast` check, and before anything else it
+compares the CPU against the features it was compiled for: cmpxchg16b, popcnt,
+SSE through SSE4.2, SSSE3 and PCLMUL. On a CPU missing one it exits at once
+with `FATAL ERROR: This binary was compiled with pclmul enabled, but this
+feature is not available on this processor`. Every x86 server CPU from the last
+decade has them, and so do GitHub's runners, but a KVM guest given QEMU's
+generic CPU model (`QEMU Virtual CPU version 2.5+`) does not, and there
+`agy --version` and the smoke test's agy checks fail while CI passes. Give the
+VM the host CPU model (`-cpu host`) instead. To inspect agy on such a machine
+anyway, Debian's `qemu-user` runs it as a single process:
+`qemu-x86_64 -cpu max /usr/local/bin/agy`. A child process agy spawns runs
+natively again and dies the same way.
+
 **`SHELL` is set with `ENV`, and checking it from bash lies.** Docker sets no
 `SHELL` of its own, and the `SHELL` Dockerfile directive only governs `RUN`
 steps. Agents and tools read `$SHELL` to pick the shell they spawn, and without
@@ -535,12 +593,20 @@ Making the image writable for uid-allocating orchestrators means `0775` plus
 setgid on those directories — a larger change that widens write access for every
 deployment, so it is left to whoever needs it.
 
-**Agent state spans three top-level `$HOME` entries.** Claude Code uses
+**Agent state spans several top-level `$HOME` entries.** Claude Code uses
 `~/.claude/` plus a sibling `~/.claude.json`; Codex uses `~/.codex/`; the
+Antigravity CLI uses `~/.gemini/` (`antigravity-cli/` for settings, logs,
+conversations and updater state, `config/` for MCP servers and hooks); the
 `skills` CLI adds `~/.agents/` (the canonical skill copies) and symlinks from
 there into each agent's directory. Anything persisting agent state needs the
 whole home, not one subdirectory — and because skills are symlinks into
 `~/.agents`, persisting `~/.claude` alone yields dangling links.
+
+Google documents the Antigravity CLI's login tokens as kept in the OS keyring,
+which on Linux means secret-service over D-Bus, and a container runs neither.
+Where agy keeps a login here has not been checked; confirm one survives a
+container restart before relying on the home volume for it. Without a browser,
+agy prints a sign-in URL and accepts the authorization code pasted back.
 
 **A volume over `$HOME` hides the build-time home, and `climage-idle` changes
 what a detached container does.** Two consequences of the deployment story worth
@@ -575,7 +641,9 @@ the registry: sum the file sizes in each layer's `tar tv` listing.
 
 The four variants are 1.5 GB (`slim`), 2.2 GB (`base`), and 3.4 GB for both
 `full` and `full-argus` on amd64, the last two computed from the registry; arm64
-runs up to 0.2 GB smaller (1.5, 2.1, 3.2 and 3.2 GB in CI).
+runs up to 0.2 GB smaller (1.5, 2.1, 3.2 and 3.2 GB in CI). Those figures
+predate the Antigravity CLI, which adds a 274 MB binary to every variant
+(257 MB on arm64; its release tarballs are 101 MB and 92 MB).
 
 The CI figure is rounded *up* — `numfmt --to=iec` rounds away from zero, so
 2,147,483,649 bytes prints as `2.1G` — which makes step changes look up to
@@ -595,12 +663,13 @@ it, kubectl 59 MB, and helm, helm-diff and helmfile 323 MB), of which Go's
 `full-argus` adds only the argus-sidecar binary on top — 12 MB uncompressed,
 5 MB in the registry — which is why the two share an uncompressed figure. Then
 agent CLIs ~765 MB of native binaries (Claude Code 356 MB and Codex 408 MB as
-of 2.1.327 / 0.170.0), ffmpeg's dependency tree 364 MB, the build-essential
-chain 231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB —
-pnpm 12 ships a self-contained native executable rather than JavaScript, so its
-npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
-21 MB static binary to every variant, hadolint 56 MB (60 MB on arm64; 12 MB
-compressed), actionlint 6 MB, and pre-commit's tool environment 18 MB;
+of 2.1.327 / 0.170.0) and agy's 274 MB (1.5.15), ffmpeg's dependency tree
+364 MB, the build-essential chain 231 MB, the base image ~230 MB, uv's CPython
+123 MB, and pnpm's 58 MB — pnpm 12 ships a self-contained native executable
+rather than JavaScript, so its npm-registry size (4 MB) badly understates what
+lands on disk. gitleaks adds a 21 MB static binary to every variant, hadolint
+56 MB (60 MB on arm64; 12 MB compressed), actionlint 6 MB, and pre-commit's
+tool environment 18 MB;
 cargo-audit adds 15 MB (13 MB on arm64) to the two Rust variants. kubectl adds
 59 MB (55 MB on arm64; 17 MB compressed) to both `full` variants, helm 59 MB
 (55 MB; 18 MB), helm-diff 83 MB (78 MB; 33 MB), which ships unstripped, and
@@ -880,7 +949,7 @@ CI. The SBOM attestation lists Debian's package, Node's version and gitleaks'
 Go module, but not Bun's copy. A static copy shows up only when the layers are
 grepped for Brotli's built-in dictionary (`timedownlifeleftbackcode`). The
 Codex, uv, cargo-audit, pnpm and argus binaries carried none at the pins of
-2026-10-29.
+2026-10-29, nor did agy 1.5.15 on 2026-11-23.
 
 **Image size is a real constraint.** `build-essential`, `ffmpeg`, and
 `imagemagick` dominate the footprint. The CI build reports the size on every

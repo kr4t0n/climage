@@ -59,6 +59,7 @@ add_group "${INSTALL_MEDIA:-true}" "ffmpeg -version" "ffprobe -version" \
 add_group "${INSTALL_BUILD_TOOLS:-true}" "make --version" "gcc --version"
 add_group "${INSTALL_CLAUDE_CODE:-true}" "claude --version"
 add_group "${INSTALL_CODEX:-true}" "codex --version"
+add_group "${INSTALL_ANTIGRAVITY:-true}" "agy --version"
 add_group "${INSTALL_SKILLS:-true}" "skills --version"
 add_group "${INSTALL_ARGUS:-false}" "argus-sidecar version"
 add_group "${INSTALL_GO:-false}" "go version" "gofmt -h"
@@ -177,6 +178,10 @@ check_pin actionlint "${ACTIONLINT_VERSION:-}" \
 if [[ "${INSTALL_KUBECTL:-false}" == "true" ]]; then
     check_pin kubectl "${KUBECTL_VERSION:-}" \
         "$(kubectl version --client 2>/dev/null | awk 'NR == 1 { sub(/^v/, "", $NF); print $NF }')"
+fi
+# agy prints the bare version, "1.5.15".
+if [[ "${INSTALL_ANTIGRAVITY:-true}" == "true" ]]; then
+    check_pin agy "${ANTIGRAVITY_VERSION:-}" "$(agy --version 2>/dev/null | awk 'NR == 1')"
 fi
 # helm reports "v3.21.4" and helmfile "helmfile version 1.8.2". `helm plugin
 # list` reads only plugin.yaml, so `helm diff version` is asked as well: it runs
@@ -319,6 +324,33 @@ if [[ "${INSTALL_CODEX:-true}" == "true" ]]; then
         printf 'ok    %-14s check_for_update_on_startup=false\n' "codex prompt"
     else
         printf 'FAIL  %-14s check_for_update_on_startup is %s, expected false\n' "codex prompt" "${startup_check:-<missing>}"
+        failed=$((failed + 1))
+    fi
+fi
+
+# agy logs which way its updater went on every launch. `agy agents` gets that far
+# with no login and no network, so agy is asked rather than printenv: only the
+# literal "true" disables it, and a release that renames the variable fails here.
+if [[ "${INSTALL_ANTIGRAVITY:-true}" == "true" ]]; then
+    tmp=$(mktemp -d)
+    timeout 60 agy --log-file "${tmp}/agy.log" agents </dev/null >/dev/null 2>&1 || true
+    if grep -q 'Auto-update disabled via environment variable AGY_CLI_DISABLE_AUTO_UPDATE' \
+        "${tmp}/agy.log" 2>/dev/null; then
+        printf 'ok    %-14s disabled by AGY_CLI_DISABLE_AUTO_UPDATE\n' "agy update"
+    else
+        printf 'FAIL  %-14s agy did not log its update check as disabled\n' "agy update"
+        failed=$((failed + 1))
+    fi
+    rm -rf "${tmp}"
+
+    # The second stop, and the only one a manual `agy update` respects: it
+    # refuses a directory the runtime user cannot write, with no fallback.
+    agy_dir=$(dirname "$(readlink -f "$(command -v agy)")")
+    if [[ ! -w "${agy_dir}" && "${agy_dir}" != "${HOME}"/* ]]; then
+        printf 'ok    %-14s %s, not writable by uid %s\n' "agy dir" "${agy_dir}" "$(id -u)"
+    else
+        printf 'FAIL  %-14s %s is writable or under %s; agy could update itself\n' \
+            "agy dir" "${agy_dir}" "${HOME}"
         failed=$((failed + 1))
     fi
 fi

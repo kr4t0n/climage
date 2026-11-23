@@ -20,6 +20,10 @@ values in the `Dockerfile`; credentials are listed by name only.
 | `CLAUDE_CODE_VERSION` | `2.1.330` | Exact Claude Code version (npm `latest`) |
 | `INSTALL_CODEX` | `true` | Set `false` to omit the Codex CLI |
 | `CODEX_VERSION` | `0.171.0` | Exact Codex CLI version (npm `latest`) |
+| `INSTALL_ANTIGRAVITY` | `true` | Set `false` to omit the Antigravity CLI (`agy`) — a 274 MB binary on amd64, 257 MB on arm64 |
+| `ANTIGRAVITY_VERSION` | `1.5.15` | Exact [Antigravity CLI](https://antigravity.google/docs/cli/using/) release |
+| `ANTIGRAVITY_BUILD` | `5514532022517760` | Build number in that release's download path; each release has its own |
+| `ANTIGRAVITY_SHA512_AMD64`, `ANTIGRAVITY_SHA512_ARM64` | release digests | SHA-512 of each architecture's tarball. Google publishes them only in its update service's manifest, for the newest release alone, so the pins live here |
 | `INSTALL_SKILLS` | `true` | Set `false` to omit the `skills` CLI |
 | `INSTALL_MEDIA` | `true` | ffmpeg, ImageMagick, poppler — ~409 MB with dependencies |
 | `INSTALL_BUILD_TOOLS` | `true` | `build-essential`, `pkg-config` — ~231 MB |
@@ -83,6 +87,7 @@ docker build --build-arg INSTALL_MEDIA=false --build-arg INSTALL_BUILD_TOOLS=fal
 | `LANG` | `en_US.UTF-8` | Locale is generated in the image |
 | `SHELL` | `/bin/bash` | Shell that agents and tools spawn; without it they fall back to `/bin/sh` (dash) |
 | `DISABLE_AUTOUPDATER` | `1` | Turns off Claude Code's self-update; see [Agent CLI updates](#agent-cli-updates) |
+| `AGY_CLI_DISABLE_AUTO_UPDATE` | `true` | Turns off the Antigravity CLI's update check; see [Agent CLI updates](#agent-cli-updates) |
 
 ### Helm plugins
 
@@ -114,24 +119,27 @@ renders on the client, where `lookup` returns nothing. Pass
 
 ## Agent CLI updates
 
-Claude Code and Codex can each replace themselves with a newer release than the
-image pins. Run as the `climage` user, an update lands under `$HOME`: on a home
-volume it outlives the container, and it keeps shadowing the pinned copy in
-every later image. The image turns off every update that starts without being
-asked for, and leaves the update commands a person runs by hand.
+Claude Code, Codex and the Antigravity CLI can each replace themselves with a
+newer release than the image pins. Run as the `climage` user, a Claude Code or
+Codex update lands under `$HOME`: on a home volume it outlives the container,
+and it keeps shadowing the pinned copy in every later image. The image turns off
+every update that starts without being asked for. It leaves Claude Code's and
+Codex's update commands working by hand; `agy update` fails, because the
+Antigravity CLI updates only in place.
 
-| | Claude Code | Codex |
-| --- | --- | --- |
-| **What updates it** | Its background self-update, which runs `npm install -g` into `~/.npm-global`, ahead of `/usr/local/bin` on `PATH` | Its startup prompt: every interactive launch offers *Update now*, pre-selected, which runs `npm install -g @openai/codex` into `~/.npm-global`. And its background daemon: interactive `codex` starts it, running a copy of Codex in `~/.codex/packages/app-server-daemon/` that a companion updater replaces from upstream's `install.sh` within minutes, then hourly, while `codex --version` still reports the pin |
-| **How the image turns it off** | `DISABLE_AUTOUPDATER=1`, an `ENV` in the image. Only `1` disables it; `0` or an empty value leaves it on | Two keys in `/etc/codex/config.toml`, Codex's system config layer, written when `INSTALL_CODEX=true`: `check_for_update_on_startup = false` at the top level, and `daemon_auto_start = false` under `[features]` |
-| **Still open** | `claude update`, run by hand, installs into `~/.npm-global` the same way. Only `DISABLE_UPDATES=1` blocks it, and the image does not set it | `codex update`, run by hand, installs into `~/.npm-global` the same way. `codex agents`, `codex app-server daemon start` and `codex remote-control` still start the daemon, updater included |
-| **Turn it back on** | Per container: `-e DISABLE_AUTOUPDATER=0`. Per command: `DISABLE_AUTOUPDATER=0 claude` | Per user, in `~/.codex/config.toml`, which overrides `/etc/codex/config.toml`: `check_for_update_on_startup = true` at the top, `daemon_auto_start = true` under `[features]`. Per command: `codex -c check_for_update_on_startup=true`, `codex -c features.daemon_auto_start=true` |
-| **Check the effective value** | `printenv DISABLE_AUTOUPDATER` prints `1`; `claude doctor` reports whether auto-update is on | `codex doctor` reports the `startup update check` as `false`; `codex features list` reports `daemon_auto_start` as `false` |
-| **Remove a copy already on the volume** | `which -a claude` lists it; `npm uninstall -g @anthropic-ai/claude-code` removes it | `which -a codex` lists an npm copy; `npm uninstall -g @openai/codex` removes it. For a daemon copy, kill the updater by the PID in `~/.codex/app-server-daemon/daemon-updater.pid`, then delete `~/.codex/packages/app-server-daemon/` |
+| | Claude Code | Codex | Antigravity (`agy`) |
+| --- | --- | --- | --- |
+| **What updates it** | Its background self-update, which runs `npm install -g` into `~/.npm-global`, ahead of `/usr/local/bin` on `PATH` | Its startup prompt: every interactive launch offers *Update now*, pre-selected, which runs `npm install -g @openai/codex` into `~/.npm-global`. And its background daemon: interactive `codex` starts it, running a copy of Codex in `~/.codex/packages/app-server-daemon/` that a companion updater replaces from upstream's `install.sh` within minutes, then hourly, while `codex --version` still reports the pin | Its background self-updater: a launch, at most once every 15 minutes, asks Google's update service for a newer release and installs it into the directory `agy` runs from |
+| **How the image turns it off** | `DISABLE_AUTOUPDATER=1`, an `ENV` in the image. Only `1` disables it; `0` or an empty value leaves it on | Two keys in `/etc/codex/config.toml`, Codex's system config layer, written when `INSTALL_CODEX=true`: `check_for_update_on_startup = false` at the top level, and `daemon_auto_start = false` under `[features]` | `AGY_CLI_DISABLE_AUTO_UPDATE=true`, an `ENV` in the image, ends the check as it starts. Only `true` disables it; `1`, `TRUE` and `yes` leave it on. Behind that, the binary is root-owned in `/usr/local/bin`, and the updater skips a directory it cannot write |
+| **Still open** | `claude update`, run by hand, installs into `~/.npm-global` the same way. Only `DISABLE_UPDATES=1` blocks it, and the image does not set it | `codex update`, run by hand, installs into `~/.npm-global` the same way. `codex agents`, `codex app-server daemon start` and `codex remote-control` still start the daemon, updater included | Nothing. `agy update`, run by hand, ignores the variable but fails on `/usr/local/bin`, and does not fall back to `$HOME` |
+| **Turn it back on** | Per container: `-e DISABLE_AUTOUPDATER=0`. Per command: `DISABLE_AUTOUPDATER=0 claude` | Per user, in `~/.codex/config.toml`, which overrides `/etc/codex/config.toml`: `check_for_update_on_startup = true` at the top, `daemon_auto_start = true` under `[features]`. Per command: `codex -c check_for_update_on_startup=true`, `codex -c features.daemon_auto_start=true` | Not for the baked copy: with the variable unset, the root-owned directory still blocks the update. Build with a newer `ANTIGRAVITY_VERSION` instead |
+| **Check the effective value** | `printenv DISABLE_AUTOUPDATER` prints `1`; `claude doctor` reports whether auto-update is on | `codex doctor` reports the `startup update check` as `false`; `codex features list` reports `daemon_auto_start` as `false` | Every launch logs its decision under `~/.gemini/antigravity-cli/log/`: `Auto-update disabled via environment variable AGY_CLI_DISABLE_AUTO_UPDATE`, or, without the variable, `Directory /usr/local/bin is not fully accessible … skipping update` |
+| **Remove a copy already on the volume** | `which -a claude` lists it; `npm uninstall -g @anthropic-ai/claude-code` removes it | `which -a codex` lists an npm copy; `npm uninstall -g @openai/codex` removes it. For a daemon copy, kill the updater by the PID in `~/.codex/app-server-daemon/daemon-updater.pid`, then delete `~/.codex/packages/app-server-daemon/` | None is made. Google's own installer puts a copy in `~/.local/bin/agy`; delete that file to drop it |
 
-The smoke test asserts all three off switches: `DISABLE_AUTOUPDATER` exported
-as `1`, and Codex's effective `check_for_update_on_startup` and
-`daemon_auto_start`, as `codex doctor` and `codex features list` report them.
+The smoke test asserts the off switches: `DISABLE_AUTOUPDATER` exported as `1`,
+Codex's effective `check_for_update_on_startup` and `daemon_auto_start`, as
+`codex doctor` and `codex features list` report them, and the Antigravity CLI's
+logged update decision, with its directory unwritable by the runtime user.
 
 ## Publishing credentials
 

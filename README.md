@@ -30,7 +30,7 @@ it to Docker Hub. There is no application code.
 | Build | `build-essential` (`gcc`, `make`), `pkg-config` |
 | Shell & process | `bash`, `tmux`, `vim.tiny`, `htop`, `procps`, `tini` |
 | Archives | `unzip`, `zip`, `xz`, `bzip2`, `tar`, `gzip` |
-| Agent CLIs | `claude` (Claude Code), `codex` (OpenAI Codex), `skills` (open agent-skills manager) — all optional, on by default |
+| Agent CLIs | `claude` (Claude Code), `codex` (OpenAI Codex), `agy` (Google Antigravity CLI), `skills` (open agent-skills manager) — all optional, on by default |
 | First-party | `argus-sidecar` — off by default, only in the [`full-argus`](#image-variants) variant |
 
 `python` and `python3` resolve to the uv-managed CPython (3.12 by default), not
@@ -221,14 +221,20 @@ environment variable and publishing credential. The ones most people touch:
 - `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, in `.env`, let `make push`
   publish; CI reads them from GitHub secrets.
 
-Both agent CLIs can replace themselves with a newer release than the image
+All three agent CLIs can replace themselves with a newer release than the image
 pins. The image turns off every update that starts without being asked for:
 Claude Code's with `DISABLE_AUTOUPDATER=1`, Codex's startup prompt and
-background daemon in `/etc/codex/config.toml`. `claude update` and
-`codex update`, run by hand, still work.
-[Agent CLI updates](CONFIGURATION.md#agent-cli-updates) sets out both CLIs the
-same way: what updates, how it is off, what is still open, how to turn it back
-on, and how to check.
+background daemon in `/etc/codex/config.toml`, and the Antigravity CLI's with
+`AGY_CLI_DISABLE_AUTO_UPDATE=true` and a root-owned install directory.
+`claude update` and `codex update`, run by hand, still work; `agy update` does
+not, since it can only replace the binary where it stands.
+[Agent CLI updates](CONFIGURATION.md#agent-cli-updates) sets out the three CLIs
+the same way: what updates, how it is off, what is still open, how to turn it
+back on, and how to check.
+
+The Antigravity CLI's amd64 build needs a CPU with PCLMULQDQ. Hardware from the
+last decade has it; a VM given a generic CPU model, such as QEMU's default, may
+not, and there `agy` exits at once with a `go/sigill-fail-fast` error.
 
 ## CI and publishing
 
