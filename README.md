@@ -124,10 +124,10 @@ something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
-| `latest` | everything in the table above except the Go and Rust toolchains and the Kubernetes tools | 2.2 GB | 809 MB |
-| `slim` | no media or build-tool packages | 1.5 GB | 574 MB |
-| `full` | `latest` plus the Go and Rust toolchains, the Kubernetes tools and the headless-browser libraries | 3.4 GB | 1214 MB |
-| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.4 GB | 1219 MB |
+| `latest` | everything in the table above except the Go and Rust toolchains and the Kubernetes tools | 2.5 GB | 972 MB |
+| `slim` | no media or build-tool packages | 1.9 GB | 738 MB |
+| `full` | `latest` plus the Go and Rust toolchains, the Kubernetes tools and the headless-browser libraries | 3.7 GB | 1377 MB |
+| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.7 GB | 1382 MB |
 
 Both columns are amd64: uncompressed is the total size of the image's files,
 compressed is what Docker Hub reports for the pushed image. arm64 runs slightly
