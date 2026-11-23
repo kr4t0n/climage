@@ -639,11 +639,12 @@ matches the compressed registry size instead: 810M for `base`, against 811 MiB
 on Docker Hub. Until the size step changes, take amd64 uncompressed figures from
 the registry: sum the file sizes in each layer's `tar tv` listing.
 
-The four variants are 1.5 GB (`slim`), 2.2 GB (`base`), and 3.4 GB for both
-`full` and `full-argus` on amd64, the last two computed from the registry; arm64
-runs up to 0.2 GB smaller (1.5, 2.1, 3.2 and 3.2 GB in CI). Those figures
-predate the Antigravity CLI, which adds a 274 MB binary to every variant
-(257 MB on arm64; its release tarballs are 101 MB and 92 MB).
+At 0.7.0 the four variants are 1.9 GB (`slim`), 2.5 GB (`base`), and 3.7 GB
+for both `full` and `full-argus` on amd64, all four computed from the
+registry; arm64 runs up to 0.2 GB smaller (1.9, 2.4, 3.5 and 3.5 GB in CI).
+The README gives GiB rounded to the nearest 0.1, not up as `numfmt` rounds:
+`full-argus` holds 3,974,299,841 B of files and `full` 3,962,437,649 B, which
+`numfmt` would print as 3.8G and 3.7G for 12 MB of difference.
 
 The CI figure is rounded *up* — `numfmt --to=iec` rounds away from zero, so
 2,147,483,649 bytes prints as `2.1G` — which makes step changes look up to
@@ -663,13 +664,13 @@ it, kubectl 59 MB, and helm, helm-diff and helmfile 323 MB), of which Go's
 `full-argus` adds only the argus-sidecar binary on top — 12 MB uncompressed,
 5 MB in the registry — which is why the two share an uncompressed figure. Then
 agent CLIs ~765 MB of native binaries (Claude Code 356 MB and Codex 408 MB as
-of 2.1.327 / 0.170.0) and agy's 274 MB (1.5.15), ffmpeg's dependency tree
-364 MB, the build-essential chain 231 MB, the base image ~230 MB, uv's CPython
-123 MB, and pnpm's 58 MB — pnpm 12 ships a self-contained native executable
-rather than JavaScript, so its npm-registry size (4 MB) badly understates what
-lands on disk. gitleaks adds a 21 MB static binary to every variant, hadolint
-56 MB (60 MB on arm64; 12 MB compressed), actionlint 6 MB, and pre-commit's
-tool environment 18 MB;
+of 2.1.327 / 0.170.0) and agy's 274 MB (1.5.15; 257 MB on arm64, 98 MB
+compressed), ffmpeg's dependency tree 364 MB, the build-essential chain
+231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB — pnpm 12
+ships a self-contained native executable rather than JavaScript, so its
+npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
+21 MB static binary to every variant, hadolint 56 MB (60 MB on arm64; 12 MB
+compressed), actionlint 6 MB, and pre-commit's tool environment 18 MB;
 cargo-audit adds 15 MB (13 MB on arm64) to the two Rust variants. kubectl adds
 59 MB (55 MB on arm64; 17 MB compressed) to both `full` variants, helm 59 MB
 (55 MB; 18 MB), helm-diff 83 MB (78 MB; 33 MB), which ships unstripped, and
