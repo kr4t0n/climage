@@ -173,6 +173,47 @@ check_pin hadolint "${HADOLINT_VERSION:-}" \
     "$(hadolint --version 2>/dev/null | awk 'NR == 1 { print $NF }')"
 check_pin actionlint "${ACTIONLINT_VERSION:-}" \
     "$(actionlint --version 2>/dev/null | awk 'NR == 1')"
+# Debian bookworm ships git-lfs 3.3.0 (Go 1.19), which has four unfixed High
+# CVEs (CVE-2026-105803, -105802, -69261, -69260, fixed in 3.8.1). Ask
+# `git lfs` rather than `git-lfs` directly so git's subcommand dispatch is
+# exercised too.
+git_lfs_ver=$(git lfs version 2>/dev/null | awk 'NR == 1 { sub(/^git-lfs\//, "", $1); print $1 }')
+check_pin git-lfs "${GIT_LFS_VERSION:-}" "${git_lfs_ver}"
+if [[ "${git_lfs_ver}" =~ ^[0-9]+(\.[0-9]+)+$ ]] \
+    && [[ "$(printf '%s\n%s\n' "3.8.1" "${git_lfs_ver}" | sort -V | head -n 1)" == "3.8.1" ]]; then
+    printf 'ok    %-14s %s (>= 3.8.1)\n' "git-lfs min" "${git_lfs_ver}"
+else
+    printf 'FAIL  %-14s %s is older than 3.8.1 (CVE-2026-105803/-105802/-69261/-69260)\n' \
+        "git-lfs min" "${git_lfs_ver:-<missing>}"
+    failed=$((failed + 1))
+fi
+
+# System-level LFS filter registration in /etc/gitconfig, matching what
+# Debian's git-lfs package used to configure. Reading --system ensures a volume
+# mounted over $HOME cannot hide it.
+lfs_filter_ok=true
+lfs_filter_summary=()
+for pair in \
+    "filter.lfs.clean=git-lfs clean -- %f" \
+    "filter.lfs.smudge=git-lfs smudge -- %f" \
+    "filter.lfs.process=git-lfs filter-process" \
+    "filter.lfs.required=true"; do
+    key=${pair%%=*}
+    want=${pair#*=}
+    got=$(git config --system --get "${key}" 2>/dev/null || true)
+    if [[ "${got}" == "${want}" ]]; then
+        lfs_filter_summary+=("${key}=${got}")
+    else
+        printf 'FAIL  %-14s %s is %s, expected %s\n' \
+            "git-lfs filter" "${key}" "${got:-<unset>}" "${want}"
+        lfs_filter_ok=false
+        failed=$((failed + 1))
+    fi
+done
+if [[ "${lfs_filter_ok}" == "true" ]]; then
+    printf 'ok    %-14s system gitconfig: %s\n' "git-lfs filter" \
+        "$(printf '%s; ' "${lfs_filter_summary[@]}" | sed 's/; $//')"
+fi
 # kubectl's pin follows a cluster's minor, so a wrong patch is worth catching
 # too. It reports "Client Version: v1.35.9"; the pin has no "v".
 if [[ "${INSTALL_KUBECTL:-false}" == "true" ]]; then
