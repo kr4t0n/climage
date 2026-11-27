@@ -23,7 +23,7 @@ it to Docker Hub. There is no application code.
 | Kubernetes | `kubectl`, with `kubectl kustomize` built in, `helm` with the `helm diff` plugin, and `helmfile` — off by default, in the [`full` and `full-argus`](#kubernetes) variants |
 | Search & text | `rg` (ripgrep), `fd`, `bat`, `jq`, `tree`, `file`, `less`, `diff`, `patch`, `moreutils` |
 | Media & documents | `ffmpeg`, `ffprobe`, `convert` (ImageMagick), `pdftotext` (poppler) |
-| VCS & network | `git`, `git-lfs`, `gh`, `ssh`, `curl`, `wget`, `rsync`, `dig`, `ping`, `nc`, `socat` |
+| VCS & network | `git`, `git-lfs` (pinned upstream release), `gh`, `ssh`, `curl`, `wget`, `rsync`, `dig`, `ping`, `nc`, `socat` |
 | Secrets & hooks | `gitleaks`, `pre-commit` |
 | Linters | `hadolint` (Dockerfiles), `actionlint` (GitHub Actions workflows), `shellcheck` |
 | Data | `sqlite3` |
@@ -182,7 +182,7 @@ cluster's version before relying on it. The image carries no kubeconfig and no
 credentials: kubectl reads `~/.kube/config` or `KUBECONFIG` as usual, and a
 volume mounted at `/home/climage` persists both the config and kubectl's cache.
 
-They also ship Helm 3 (`HELM_VERSION`, 3.21 at present) with the
+They also ship Helm 3 (`HELM_VERSION`, 3.22 at present) with the
 [helm-diff](https://github.com/databus23/helm-diff) plugin, and
 [helmfile](https://github.com/helmfile/helmfile). `helm diff upgrade` renders
 the chart on the client by default, and `helmfile diff` and `helmfile apply` use

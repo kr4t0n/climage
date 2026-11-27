@@ -215,7 +215,7 @@ if [[ "${lfs_filter_ok}" == "true" ]]; then
         "$(printf '%s; ' "${lfs_filter_summary[@]}" | sed 's/; $//')"
 fi
 # kubectl's pin follows a cluster's minor, so a wrong patch is worth catching
-# too. It reports "Client Version: v1.35.9"; the pin has no "v".
+# too. It reports "Client Version: v1.35.11"; the pin has no "v".
 if [[ "${INSTALL_KUBECTL:-false}" == "true" ]]; then
     check_pin kubectl "${KUBECTL_VERSION:-}" \
         "$(kubectl version --client 2>/dev/null | awk 'NR == 1 { sub(/^v/, "", $NF); print $NF }')"
@@ -224,7 +224,7 @@ fi
 if [[ "${INSTALL_ANTIGRAVITY:-true}" == "true" ]]; then
     check_pin agy "${ANTIGRAVITY_VERSION:-}" "$(agy --version 2>/dev/null | awk 'NR == 1')"
 fi
-# helm reports "v3.21.4" and helmfile "helmfile version 1.8.2". `helm plugin
+# helm reports "v3.22.1" and helmfile "helmfile version 1.8.5". `helm plugin
 # list` reads only plugin.yaml, so `helm diff version` is asked as well: it runs
 # the plugin's binary, which helm finds through HELM_PLUGINS.
 if [[ "${INSTALL_HELM:-false}" == "true" ]]; then

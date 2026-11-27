@@ -9,6 +9,7 @@
 #   go + rust        -> optional compiled-language toolchains, copied from the
 #                       official images; both `full` variants turn them on
 #   apt layer        -> search/media/build tooling agents shell out to
+#   git-lfs          -> Git LFS client from a verified release (global filters)
 #   gitleaks         -> secret scanner for commit hooks, from a verified release
 #   hadolint +       -> Dockerfile and workflow linters, from verified releases
 #   actionlint
@@ -89,7 +90,7 @@ ARG INSTALL_CODEX=true
 ARG CODEX_VERSION=0.171.0
 ARG INSTALL_SKILLS=true
 ARG SKILLS_VERSION=1.7.0
-ARG PNPM_VERSION=12.10.1
+ARG PNPM_VERSION=12.23.0
 ARG PRE_COMMIT_VERSION=4.6.2
 # The same release ci.yml scans with and the gitleaks hook in
 # .pre-commit-config.yaml builds; the three pins move together.
@@ -167,7 +168,6 @@ RUN install -m 0755 -d /etc/apt/keyrings \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git \
-        git-lfs \
         gh \
         openssh-client \
         wget \
@@ -540,7 +540,7 @@ RUN if [ "${INSTALL_ARGUS}" = "true" ]; then \
 # RUN, so declaring them above would invalidate every cached layer below that
 # point, in every variant.
 ARG INSTALL_KUBECTL=false
-ARG KUBECTL_VERSION=1.35.9
+ARG KUBECTL_VERSION=1.35.11
 # dl.k8s.io publishes a bare digest beside each binary, with no file name, so
 # the check line is assembled here. An empty digest makes a malformed line,
 # which sha256sum rejects.
@@ -567,7 +567,7 @@ RUN if [ "${INSTALL_KUBECTL}" = "true" ]; then \
 # AGENTS.md. Each version ARG sits right before its RUN, for the cache reason
 # kubectl's do, so a bump rebuilds only its own layer and those below it.
 ARG INSTALL_HELM=false
-ARG HELM_VERSION=3.21.4
+ARG HELM_VERSION=3.22.1
 # get.helm.sh serves a `.sha256sum` beside each tarball, in sha256sum's own
 # format. awk keeps the asset's line, and a file without one fails the check.
 RUN if [ "${INSTALL_HELM}" = "true" ]; then \
@@ -617,7 +617,7 @@ RUN if [ "${INSTALL_HELM}" = "true" ]; then \
 
 # helmfile runs the helm and helm-diff above, so it needs no `helmfile init`,
 # which installs helm and plugins of its own choosing when they are missing.
-ARG HELMFILE_VERSION=1.8.2
+ARG HELMFILE_VERSION=1.8.5
 RUN if [ "${INSTALL_HELM}" = "true" ]; then \
         case "${TARGETARCH}" in \
             amd64|arm64) arch="${TARGETARCH}" ;; \
@@ -634,6 +634,31 @@ RUN if [ "${INSTALL_HELM}" = "true" ]; then \
         && install -m 0755 "${tmp}/helmfile" /usr/local/bin/helmfile \
         && rm -rf "${tmp}"; \
     fi
+
+# --- Git LFS ----------------------------------------------------------------
+# Debian bookworm ships git-lfs 3.3.0 (Go 1.19), which carries four unfixed
+# High CVEs (CVE-2026-105803, -105802, -69261, -69260). Install upstream's
+# static release binary instead, verified against SHA-256 digests pinned from
+# the release's PGP-signed sha256sums.asc, and register the global filters in
+# /etc/gitconfig as Debian's package did. The ARGs sit right before this RUN so
+# a future bump invalidates nothing above it.
+ARG GIT_LFS_VERSION=3.8.1
+ARG GIT_LFS_SHA256_AMD64=e72cf723a4a660438862282e8aecf3885fc8123e88bfcad534cf6b941a354b75
+ARG GIT_LFS_SHA256_ARM64=67895dd77b63329796bc5efdd47b57f218e1f7b98717ebaf936a8238dbcaec0f
+RUN case "${TARGETARCH}" in \
+        amd64) arch=amd64; sha="${GIT_LFS_SHA256_AMD64}" ;; \
+        arm64) arch=arm64; sha="${GIT_LFS_SHA256_ARM64}" ;; \
+        *) echo "git-lfs: no release asset for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && asset="git-lfs-linux-${arch}-v${GIT_LFS_VERSION}.tar.gz" \
+    && tmp="$(mktemp -d)" \
+    && curl -fsSL -o "${tmp}/${asset}" \
+        "https://github.com/git-lfs/git-lfs/releases/download/v${GIT_LFS_VERSION}/${asset}" \
+    && echo "${sha}  ${tmp}/${asset}" | sha256sum -c - \
+    && tar -xzf "${tmp}/${asset}" -C "${tmp}" "git-lfs-${GIT_LFS_VERSION}/git-lfs" \
+    && install -m 0755 "${tmp}/git-lfs-${GIT_LFS_VERSION}/git-lfs" /usr/local/bin/git-lfs \
+    && git lfs install --system --skip-repo \
+    && rm -rf "${tmp}"
 
 # Everything the unprivileged user installs at runtime lands in $HOME, so a
 # volume mounted there carries it across container restarts: npm globals in
@@ -662,16 +687,16 @@ RUN printf 'export PATH="%s/bin:%s/bin:%s:%s:%s/bin:/opt/uv/bin:/opt/rust/cargo/
 
 # Record which optional groups this image was built with, so the smoke test can
 # require exactly what is meant to be present and users can introspect a pull.
-# The linter, kubectl, Helm and agy pins go along, for the smoke test to check
-# each binary against.
-RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_BROWSER=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_ANTIGRAVITY=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\nINSTALL_GO=%s\nINSTALL_RUST=%s\nINSTALL_KUBECTL=%s\nINSTALL_HELM=%s\nHADOLINT_VERSION=%s\nACTIONLINT_VERSION=%s\nKUBECTL_VERSION=%s\nHELM_VERSION=%s\nHELM_DIFF_VERSION=%s\nHELMFILE_VERSION=%s\nANTIGRAVITY_VERSION=%s\n' \
+# The git-lfs, linter, kubectl, Helm and agy pins go along, for the smoke test
+# to check each binary against.
+RUN printf 'INSTALL_MEDIA=%s\nINSTALL_BUILD_TOOLS=%s\nINSTALL_BROWSER=%s\nINSTALL_CLAUDE_CODE=%s\nINSTALL_CODEX=%s\nINSTALL_ANTIGRAVITY=%s\nINSTALL_SKILLS=%s\nINSTALL_ARGUS=%s\nINSTALL_GO=%s\nINSTALL_RUST=%s\nINSTALL_KUBECTL=%s\nINSTALL_HELM=%s\nGIT_LFS_VERSION=%s\nHADOLINT_VERSION=%s\nACTIONLINT_VERSION=%s\nKUBECTL_VERSION=%s\nHELM_VERSION=%s\nHELM_DIFF_VERSION=%s\nHELMFILE_VERSION=%s\nANTIGRAVITY_VERSION=%s\n' \
         "${INSTALL_MEDIA}" "${INSTALL_BUILD_TOOLS}" "${INSTALL_BROWSER}" \
         "${INSTALL_CLAUDE_CODE}" "${INSTALL_CODEX}" "${INSTALL_ANTIGRAVITY}" \
         "${INSTALL_SKILLS}" "${INSTALL_ARGUS}" "${INSTALL_GO}" "${INSTALL_RUST}" \
         "${INSTALL_KUBECTL}" "${INSTALL_HELM}" \
-        "${HADOLINT_VERSION}" "${ACTIONLINT_VERSION}" "${KUBECTL_VERSION}" \
-        "${HELM_VERSION}" "${HELM_DIFF_VERSION}" "${HELMFILE_VERSION}" \
-        "${ANTIGRAVITY_VERSION}" \
+        "${GIT_LFS_VERSION}" "${HADOLINT_VERSION}" "${ACTIONLINT_VERSION}" \
+        "${KUBECTL_VERSION}" "${HELM_VERSION}" "${HELM_DIFF_VERSION}" \
+        "${HELMFILE_VERSION}" "${ANTIGRAVITY_VERSION}" \
         > /etc/climage-build.env
 
 COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh

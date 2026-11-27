@@ -37,8 +37,8 @@ Five inputs converge on one final stage:
   want them never pulls them. Off by default; `full` and `full-argus` enable
   both.
 - **Verified release tarballs** — binaries downloaded by pinned release and
-  checked by SHA-256 before install: gitleaks, hadolint and actionlint in every
-  variant, cargo-audit in the two Rust variants, kubectl, helm, the
+  checked by SHA-256 before install: git-lfs, gitleaks, hadolint and actionlint
+  in every variant, cargo-audit in the two Rust variants, kubectl, helm, the
   helm-diff plugin and helmfile in both `full` variants, argus in
   `full-argus`. The Antigravity CLI, in every variant, is checked by SHA-512,
   the only digest Google publishes for it.
@@ -137,10 +137,23 @@ the name the docs and installer use. The bucket does not list its contents;
 nixpkgs' `numtide/llm-agents.nix` pins earlier builds, if one is needed for a
 test.
 
+git-lfs takes the same shape because Debian bookworm's `git-lfs` apt package
+(3.3.0, built on Go 1.19) carries four unfixed High CVEs (`CVE-2026-105803`,
+`CVE-2026-105802`, `CVE-2026-69261`, `CVE-2026-69260`), all fixed in upstream
+3.8.1. The build fetches `git-lfs-linux-<amd64|arm64>-v<version>.tar.gz` from
+GitHub Releases and checks it against `GIT_LFS_SHA256_AMD64` or `_ARM64` pinned
+in the Dockerfile from the release's PGP-signed `sha256sums.asc` (verify the
+signature on every bump against the keys in `git-lfs/git-lfs`'s `core-gpg-keys`
+branch, cross-checked on a keyserver). Only `git-lfs-<version>/git-lfs` is
+extracted into `/usr/local/bin/git-lfs`, skipping the tarball's bundled docs
+and its `install.sh` (which runs `git lfs install` without `--system` and would
+write `/root/.gitconfig`); the build then runs `git lfs install --system
+--skip-repo` so `/etc/gitconfig` keeps the global `filter.lfs.*` entries.
+
 **The image is the global layer: runtimes and launchers. Projects hold the
 rest.** The image pins what a project calls directly — node, uv, pnpm,
-pre-commit, gitleaks, hadolint and actionlint in every variant, plus Go, cargo,
-cargo-audit, kubectl, helm and helmfile in `full` and `full-argus`. A project
+pre-commit, git-lfs, gitleaks, hadolint and actionlint in every variant, plus
+Go, cargo, cargo-audit, kubectl, helm and helmfile in `full` and `full-argus`. A project
 holds everything those launchers run, with its configuration and locks: Python
 tools as dev dependencies in `uv.lock`, run with `uv run`; frontend tools as
 devDependencies in its lockfile; Go tools as `tool` lines in `go.mod`, run with
@@ -294,12 +307,14 @@ override the library may not expose. `sleep` is `exec`'d, so it keeps the PID
 promotes each group to *required* when it was enabled — so a slim build passes
 while a default build that silently lost ffmpeg still fails. Marking those tools
 merely "optional" in the test would have hidden exactly the regression the test
-exists to catch. The same file records `HADOLINT_VERSION`,
+exists to catch. The same file records `GIT_LFS_VERSION`, `HADOLINT_VERSION`,
 `ACTIONLINT_VERSION`, `KUBECTL_VERSION`, `HELM_VERSION`, `HELM_DIFF_VERSION`,
 `HELMFILE_VERSION` and `ANTIGRAVITY_VERSION`, and the smoke test fails when a
-binary reports another version. kubectl's pin is checked only in the variants
-whose `INSTALL_KUBECTL` put the binary there, the three Helm pins only where
-`INSTALL_HELM` did, and agy's only where `INSTALL_ANTIGRAVITY` did.
+binary reports another version. git-lfs is also held to a `>= 3.8.1` floor and
+checked for its four `filter.lfs.*` entries in `/etc/gitconfig`; kubectl's pin
+is checked only in the variants whose `INSTALL_KUBECTL` put the binary there,
+the three Helm pins only where `INSTALL_HELM` did, and agy's only where
+`INSTALL_ANTIGRAVITY` did.
 
 **Smoke test as the contract.** The image's promise is "these commands exist and
 work". `tests/smoke.sh` encodes exactly that, and CI blocks a push if it breaks.
@@ -472,8 +487,8 @@ server but, in testing, left the `daemon-updater` running; kill it by the PID in
 
 **pnpm 11 moved its global bin directory, and refuses to install without it.**
 pnpm 10 linked global bins straight into `$PNPM_HOME`; 11 and 12 use
-`$PNPM_HOME/bin` (checked with `pnpm bin -g` on 10.34.6, 11.28.5 and 12.10.1),
-and `pnpm add -g` fails with
+`$PNPM_HOME/bin` (checked with `pnpm bin -g` on 10.34.6, 11.28.5, 12.10.1 and
+12.23.0), and `pnpm add -g` fails with
 `ERR_PNPM_GLOBAL_BIN_DIR_NOT_IN_PATH` unless that exact directory is on `PATH`
 — a `PATH` entry for `$PNPM_HOME`, the long-standing `pnpm setup` convention, is
 not enough. The smoke test therefore asks pnpm (`pnpm bin -g`) rather than
@@ -483,8 +498,8 @@ home volume the build-time directory is hidden, and `pnpm add -g` recreates it.
 
 Two pnpm behaviours resemble the CLI self-updates above but are deliberately
 left alone. A project's `packageManager` field (`"pnpm@10.34.6"`) makes pnpm
-download and run that version for the project — measured: `pnpm --version`
-inside such a project printed 10.34.6, outside it 12.10.1. That is per-project
+download and run that version for the project — measured at 12.10.1: `pnpm
+--version` inside such a project printed 10.34.6, outside it 12.10.1. That is per-project
 and wanted, the same trade as Go's `GOTOOLCHAIN=auto`. And `pnpm self-update`
 installs into `$PNPM_HOME/bin/pnpm`, which shadows the image's pin exactly as
 Claude Code's updater did — but only when someone runs it; pnpm has no
@@ -659,22 +674,23 @@ Refreshing the compressed column has its own trap: Docker Hub's tag API reports
 `.images[]` and pick `amd64` explicitly, or the table understates the image by
 tens of megabytes. The breakdown: the Go and Rust toolchains account for most
 of the ~1.2 GB between `base` and `full` (the browser libraries are ~18 MB of
-it, kubectl 59 MB, and helm, helm-diff and helmfile 323 MB), of which Go's
+it, kubectl 59 MB, and helm, helm-diff and helmfile 283 MB), of which Go's
 `/usr/local/go` is 282 MB, leaving Rust the larger half.
 `full-argus` adds only the argus-sidecar binary on top — 12 MB uncompressed,
 5 MB in the registry — which is why the two share an uncompressed figure. Then
 agent CLIs ~765 MB of native binaries (Claude Code 356 MB and Codex 408 MB as
 of 2.1.327 / 0.170.0) and agy's 274 MB (1.5.15; 257 MB on arm64, 98 MB
 compressed), ffmpeg's dependency tree 364 MB, the build-essential chain
-231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 58 MB — pnpm 12
-ships a self-contained native executable rather than JavaScript, so its
-npm-registry size (4 MB) badly understates what lands on disk. gitleaks adds a
-21 MB static binary to every variant, hadolint 56 MB (60 MB on arm64; 12 MB
+231 MB, the base image ~230 MB, uv's CPython 123 MB, and pnpm's 75 MB (as of
+12.23.0) — pnpm 12 ships a self-contained native executable rather than
+JavaScript, so its npm-registry size (5 MB) badly understates what lands on
+disk. git-lfs adds a 14 MB static binary (13 MB on arm64; 5 MB compressed) to
+every variant, gitleaks 21 MB, hadolint 56 MB (60 MB on arm64; 12 MB
 compressed), actionlint 6 MB, and pre-commit's tool environment 18 MB;
 cargo-audit adds 15 MB (13 MB on arm64) to the two Rust variants. kubectl adds
-59 MB (55 MB on arm64; 17 MB compressed) to both `full` variants, helm 59 MB
-(55 MB; 18 MB), helm-diff 83 MB (78 MB; 33 MB), which ships unstripped, and
-helmfile 181 MB (171 MB; 47 MB), whose module requires both the Helm 3 and the
+59 MB (55 MB on arm64; 17 MB compressed) to both `full` variants, helm 62 MB
+(58 MB; 18 MB), helm-diff 83 MB (78 MB; 33 MB), which ships unstripped, and
+helmfile 139 MB (129 MB; 40 MB), whose module requires both the Helm 3 and the
 Helm 4 libraries. Only the group flags move the needle; trimming individual
 utilities does not. `python3-dev`/`python3-venv` were dropped as redundant —
 `python3` resolves to uv's interpreter, so C extensions build against uv's
@@ -788,7 +804,7 @@ the cluster the `full` variants are deployed on, whose API server reports 1.35,
 rather than Kubernetes' newest release. At the time of writing that was 1.37.1,
 two minors ahead and outside the skew policy. Take the newest patch of the
 cluster's minor from `https://dl.k8s.io/release/stable-1.<minor>.txt`
-(`stable-1.35.txt` gave 1.35.9), and move the minor only when the cluster
+(`stable-1.35.txt` gave 1.35.11), and move the minor only when the cluster
 upgrades. The build fetches the digest from beside the binary, so a bump
 changes the version alone. Dependabot sees no `FROM` and no manifest for it, so
 like `GO_VERSION` it is maintained by hand.
@@ -806,9 +822,8 @@ nothing and the chart is rendered on the client. Under Helm 4, helm-diff passes
 and every `lookup` in the chart reads the live cluster, Secrets included.
 Deployments that allow `helm diff` against a production cluster only with
 client-side rendering need Helm 3. A move to Helm 4 is the deployment owner's
-decision, not a routine bump. `HELM_VERSION` follows the Helm minor the
-deployed charts are linted with in their own CI (3.21), and takes the newest
-patch of it.
+decision, not a routine bump. `HELM_VERSION` tracks the newest Helm 3 release
+(3.22.1 at the time of writing; upstream declared 3.22 the final Helm 3 minor).
 
 **Helm plugins live outside `$HOME`, and Helm 3 installs into one directory
 only.** `HELM_PLUGINS` is `/usr/local/lib/helm/plugins`, root-owned, so a home
@@ -835,7 +850,7 @@ other two.** Dependabot sees no `FROM` and no manifest for any of them.
 helm-diff states the oldest Helm it supports in its README (3.18 at 3.15.15),
 and its release notes record each move of the Helm releases its CI tests
 (3.21.4 at 3.15.12, 3.22.0 from 3.15.13); helmfile states its own floor as
-`HelmRequiredVersion` in `pkg/app/init.go` (3.18.6 at 1.8.2). The build
+`HelmRequiredVersion` in `pkg/app/init.go` (3.18.6 at 1.8.5). The build
 extracts `diff/plugin.yaml`, `diff/bin/diff` and `diff/LICENSE` by name, so a
 release that moves them fails the build: 3.15.14 wrapped them in a directory
 named after the archive, and 3.15.15 moved them back. Check `tar tzf` on the
@@ -950,7 +965,7 @@ CI. The SBOM attestation lists Debian's package, Node's version and gitleaks'
 Go module, but not Bun's copy. A static copy shows up only when the layers are
 grepped for Brotli's built-in dictionary (`timedownlifeleftbackcode`). The
 Codex, uv, cargo-audit, pnpm and argus binaries carried none at the pins of
-2026-10-29, nor did agy 1.5.15 on 2026-11-23.
+2026-10-29, nor did agy 1.5.15 on 2026-11-23 or git-lfs 3.8.1 on 2026-11-27.
 
 **Image size is a real constraint.** `build-essential`, `ffmpeg`, and
 `imagemagick` dominate the footprint. The CI build reports the size on every

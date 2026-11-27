@@ -34,17 +34,19 @@ values in the `Dockerfile`; credentials are listed by name only.
 | `CARGO_AUDIT_VERSION` | `0.22.2` | Exact [cargo-audit](https://github.com/rustsec/rustsec/tree/main/cargo-audit) release, installed only with `INSTALL_RUST=true` |
 | `CARGO_AUDIT_SHA256_AMD64`, `CARGO_AUDIT_SHA256_ARM64` | release digests | SHA-256 of each architecture's cargo-audit tarball; upstream publishes no checksum list, so the pins live here |
 | `INSTALL_KUBECTL` | `false` | `kubectl`, the Kubernetes client, from the Kubernetes release; on in both `full` variants |
-| `KUBECTL_VERSION` | `1.35.9` | Exact kubectl release, verified against the SHA-256 published beside it. Follows the minor of the cluster the `full` variants run on, since kubectl supports one minor of skew either way |
+| `KUBECTL_VERSION` | `1.35.11` | Exact kubectl release, verified against the SHA-256 published beside it. Follows the minor of the cluster the `full` variants run on, since kubectl supports one minor of skew either way |
 | `INSTALL_HELM` | `false` | `helm`, the helm-diff plugin and `helmfile`, from their releases; on in both `full` variants |
-| `HELM_VERSION` | `3.21.4` | Exact Helm release, verified against the SHA-256 published beside it. Stays on Helm 3, where `helm diff upgrade` renders on the client by default; see [Helm plugins](#helm-plugins) |
+| `HELM_VERSION` | `3.22.1` | Exact Helm release, verified against the SHA-256 published beside it. Stays on Helm 3, where `helm diff upgrade` renders on the client by default; see [Helm plugins](#helm-plugins) |
 | `HELM_DIFF_VERSION` | `3.15.15` | Exact [helm-diff](https://github.com/databus23/helm-diff) release, verified against its checksum list and unpacked into `HELM_PLUGINS` |
-| `HELMFILE_VERSION` | `1.8.2` | Exact [helmfile](https://github.com/helmfile/helmfile) release, verified against its checksum list |
+| `HELMFILE_VERSION` | `1.8.5` | Exact [helmfile](https://github.com/helmfile/helmfile) release, verified against its checksum list |
 | `INSTALL_ARGUS` | `false` | Bundle `argus-sidecar`; on only in the `full-argus` variant |
 | `INSTALL_BROWSER` | `false` | Headless-Chromium system libraries; on in both `full` variants — ~18 MB, since the media group already provides most of the chain |
 | `ARGUS_VERSION` | `0.3.6` | Exact [argus](https://github.com/kr4t0n/argus) release, without the `argus-sidecar-v` tag prefix |
 | `SKILLS_VERSION` | `1.7.0` | Exact [skills](https://github.com/vercel-labs/skills) version |
-| `PNPM_VERSION` | `12.10.1` | Exact [pnpm](https://pnpm.io) version (npm `latest`); a project's `packageManager` field still selects its own |
+| `PNPM_VERSION` | `12.23.0` | Exact [pnpm](https://pnpm.io) version (npm `latest`); a project's `packageManager` field still selects its own |
 | `PRE_COMMIT_VERSION` | `4.6.2` | Exact [pre-commit](https://pre-commit.com) version, installed as a uv tool under `/opt/uv` |
+| `GIT_LFS_VERSION` | `3.8.1` | Exact [Git LFS](https://github.com/git-lfs/git-lfs) release, installed from its static Linux tarball instead of Debian's apt package, with system filters registered in `/etc/gitconfig` |
+| `GIT_LFS_SHA256_AMD64`, `GIT_LFS_SHA256_ARM64` | release digests | SHA-256 of each architecture's Git LFS tarball, pinned from the release's PGP-signed `sha256sums.asc` |
 | `GITLEAKS_VERSION` | `8.30.1` | Exact [gitleaks](https://github.com/gitleaks/gitleaks) release, verified against its checksum list; the same version CI scans with |
 | `HADOLINT_VERSION` | `2.15.1` | Exact [hadolint](https://github.com/hadolint/hadolint) release, verified against its checksum list; the same version CI lints with |
 | `ACTIONLINT_VERSION` | `1.7.12` | Exact [actionlint](https://github.com/rhysd/actionlint) release, verified against its checksum list |
