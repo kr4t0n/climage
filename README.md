@@ -124,17 +124,17 @@ something it does not have.
 
 | Tag | Contents | Uncompressed | Compressed (registry) |
 | --- | --- | --- | --- |
-| `latest` | everything in the table above except the Go and Rust toolchains and the Kubernetes tools | 2.5 GB | 972 MB |
-| `slim` | no media or build-tool packages | 1.9 GB | 738 MB |
-| `full` | `latest` plus the Go and Rust toolchains, the Kubernetes tools and the headless-browser libraries | 3.7 GB | 1377 MB |
-| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.7 GB | 1382 MB |
+| `latest` | everything in the table above except the Go and Rust toolchains and the Kubernetes tools | 2.5 GB | 978 MB |
+| `slim` | no media or build-tool packages | 1.9 GB | 743 MB |
+| `full` | `latest` plus the Go and Rust toolchains, the Kubernetes tools and the headless-browser libraries | 3.7 GB | 1376 MB |
+| `full-argus` | `full` plus first-party tooling (`argus-sidecar`) | 3.7 GB | 1381 MB |
 
 Both columns are amd64: uncompressed is the total size of the image's files,
 compressed is what Docker Hub reports for the pushed image. arm64 runs slightly
 smaller in both.
 The Go and Rust toolchains account for most of the difference between `full`
-and `latest` (405 MB compressed), and the Kubernetes tools for 115 MB of it,
-helmfile alone 47 MB. Pull `latest` unless you need them.
+and `latest` (398 MB compressed), and the Kubernetes tools for 109 MB of it,
+helmfile alone 40 MB. Pull `latest` unless you need them.
 
 ```bash
 docker pull kr4t0n/climage:full
